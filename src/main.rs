@@ -6,14 +6,14 @@ mod stats;
 
 use clap::Parser;
 use indicatif::ProgressBar;
-use sieve::{PrimeIterator, PrimalityChecker};
+use sieve::{PrimalityChecker, PrimeIterator};
 use stats::Statistics;
 
 use crate::config::Config;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::parse();
-    
+
     // Validate gaps
     if config.gaps.is_empty() {
         eprintln!("Error: No gap sizes provided. Please provide at least one gap size.");
@@ -24,21 +24,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Error: Gap size cannot be 0.");
             std::process::exit(1);
         }
-        if gap % 2 != 0 && gap != 1 { // Allow gap of 1 only for special cases, but statistical analysis expects even.
-            eprintln!("Error: Gap size {} is odd. All relevant prime gaps (except for the first, between 2 and 3) are even. Please provide even gap sizes.", gap);
+        if gap % 2 != 0 && gap != 1 {
+            // Allow gap of 1 only for special cases, but statistical analysis expects even.
+            eprintln!(
+                "Error: Gap size {} is odd. All relevant prime gaps (except for the first, between 2 and 3) are even. Please provide even gap sizes.",
+                gap
+            );
             std::process::exit(1);
         }
     }
-    
+
     let target_gaps_set: std::collections::HashSet<u64> = config.gaps.iter().cloned().collect();
     let mut sorted_target_gaps = config.gaps.clone();
     sorted_target_gaps.sort_unstable(); // For consistent CSV/HTML output order
-    
+
     let max_n = 10u64.pow(config.max_exponent);
 
     // Use the user-defined segment size, converting from KB to Bytes.
     let segment_size_bytes = config.segment_size_kb * 1024;
-    
+
     println!("Max N (10^{}): {}", config.max_exponent, max_n);
     println!("Bins: {}", config.bins);
     println!("Output Dir: {}", config.output_dir);
@@ -47,12 +51,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The sieve for generating p_n only needs to go up to max_n.
     let mut prime_iterator = PrimeIterator::new(max_n, segment_size_bytes);
-    
+
     // The checker needs to handle sums S = p_n + p_{n+1} - 1.
     // So S can be close to 2 * max_n.
     let analysis_limit = max_n * 2;
     let mut primality_checker = PrimalityChecker::new(analysis_limit, segment_size_bytes);
-    
+
     let mut stats = Statistics::new(max_n, config.bins, &sorted_target_gaps);
 
     let bar = ProgressBar::new(max_n);
@@ -90,14 +94,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The occurrence is tied to the location of p_current
         if target_gaps_set.contains(&gap) {
             if let Some(bin_index) = stats.get_bin_index(p_current) {
-                *stats.bins[bin_index].gap_occurrences.entry(gap).or_insert(0) += 1;
+                *stats.bins[bin_index]
+                    .gap_occurrences
+                    .entry(gap)
+                    .or_insert(0) += 1;
             }
         }
-        
+
         // Check if S is prime
         if primality_checker.is_prime(s) {
             stats.total_s_primes += 1;
-            
+
             // Update gap spectrum (successes)
             stats.gap_spectrum.entry(gap).or_insert((0, 0)).1 += 1;
 
@@ -109,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Update high-interest gap successes in the correct bin
             // The success is also tied to the location of p_current
             if target_gaps_set.contains(&gap) {
-                 if let Some(bin_index) = stats.get_bin_index(p_current) {
+                if let Some(bin_index) = stats.get_bin_index(p_current) {
                     *stats.bins[bin_index].gap_successes.entry(gap).or_insert(0) += 1;
                 }
             }

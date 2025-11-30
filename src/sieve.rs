@@ -24,7 +24,7 @@ enum SieveState {
 impl PrimeIterator {
     pub fn new(limit: u64, segment_size_bytes: usize) -> Self {
         let sqrt_limit = (limit as f64).sqrt() as u64;
-        
+
         let mut base_sieve = bitvec![u8, Lsb0; 1; (sqrt_limit + 1) as usize];
         base_sieve.set(0, false);
         base_sieve.set(1, false);
@@ -36,7 +36,7 @@ impl PrimeIterator {
                 }
             }
         }
-        
+
         let base_primes: Vec<u32> = base_sieve.iter_ones().map(|i| i as u32).collect();
 
         Self {
@@ -50,7 +50,7 @@ impl PrimeIterator {
 
     fn sieve_segment(start: u64, end: u64, base_primes: &[u32]) -> BitVec<u64, Lsb0> {
         let mut segment = bitvec![u64, Lsb0; 0; (end - start) as usize]; // 0 means prime
-        
+
         // Unsafe cast to atomic slice. This is safe because u64 and AtomicU64 have the
         // same memory representation, and we are only performing atomic operations.
         let atomic_segment: &[AtomicU64] = unsafe {
@@ -77,12 +77,16 @@ impl PrimeIterator {
                 }
             }
         });
-        
+
         if start == 0 {
-            if segment.len() > 0 { segment.set(0, true); }
-            if segment.len() > 1 { segment.set(1, true); }
+            if segment.len() > 0 {
+                segment.set(0, true);
+            }
+            if segment.len() > 1 {
+                segment.set(1, true);
+            }
         }
-        
+
         segment
     }
 }
@@ -97,12 +101,16 @@ impl Iterator for PrimeIterator {
                     if *index < self.base_primes.len() {
                         let prime = self.base_primes[*index] as u64;
                         *index += 1;
-                        if prime > self.limit { return None; }
+                        if prime > self.limit {
+                            return None;
+                        }
                         return Some(prime);
                     } else {
                         let segment_start = self.sqrt_limit + 1;
-                        let segment_end = (segment_start + self.segment_size_bits).min(self.limit + 1);
-                        let segment = Self::sieve_segment(segment_start, segment_end, &self.base_primes);
+                        let segment_end =
+                            (segment_start + self.segment_size_bits).min(self.limit + 1);
+                        let segment =
+                            Self::sieve_segment(segment_start, segment_end, &self.base_primes);
                         self.sieve_state = SieveState::Segmented {
                             segment_start,
                             segment,
@@ -110,12 +118,18 @@ impl Iterator for PrimeIterator {
                         };
                     }
                 }
-                SieveState::Segmented { segment_start, segment, segment_index } => {
+                SieveState::Segmented {
+                    segment_start,
+                    segment,
+                    segment_index,
+                } => {
                     while *segment_index < segment.len() {
                         if !segment[*segment_index] {
                             let prime = *segment_start + *segment_index as u64;
                             *segment_index += 1;
-                            if prime > self.limit { return None; }
+                            if prime > self.limit {
+                                return None;
+                            }
                             return Some(prime);
                         }
                         *segment_index += 1;
@@ -134,13 +148,12 @@ impl Iterator for PrimeIterator {
     }
 }
 
-
 pub struct PrimalityChecker {
     limit: u64,
     sqrt_limit: u64,
     base_primes: Vec<u32>,
     known_primes_under_sqrt: BitVec<u8, Lsb0>,
-    
+
     cached_segments: VecDeque<(u64, BitVec<u64, Lsb0>)>,
     cache_size: usize,
     segment_size_bits: u64,
@@ -149,7 +162,7 @@ pub struct PrimalityChecker {
 impl PrimalityChecker {
     pub fn new(limit: u64, segment_size_bytes: usize) -> Self {
         let sqrt_limit = (limit as f64).sqrt() as u64;
-        
+
         let mut base_sieve = bitvec![u8, Lsb0; 1; (sqrt_limit + 1) as usize];
         base_sieve.set(0, false);
         base_sieve.set(1, false);
@@ -161,7 +174,7 @@ impl PrimalityChecker {
                 }
             }
         }
-        
+
         let base_primes: Vec<u32> = base_sieve.iter_ones().map(|i| i as u32).collect();
 
         Self {
@@ -176,7 +189,9 @@ impl PrimalityChecker {
     }
 
     pub fn is_prime(&mut self, n: u64) -> bool {
-        if n > self.limit { return false; }
+        if n > self.limit {
+            return false;
+        }
         if n <= self.sqrt_limit {
             return self.known_primes_under_sqrt[n as usize];
         }
@@ -191,8 +206,9 @@ impl PrimalityChecker {
         }
 
         let segment_end = segment_start + self.segment_size_bits;
-        let new_segment = PrimeIterator::sieve_segment(segment_start, segment_end, &self.base_primes);
-        
+        let new_segment =
+            PrimeIterator::sieve_segment(segment_start, segment_end, &self.base_primes);
+
         let is_p = !new_segment[(n - segment_start) as usize];
 
         if self.cached_segments.len() >= self.cache_size {

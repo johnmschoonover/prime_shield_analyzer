@@ -33,8 +33,9 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
     let mut gap_data: Vec<GapSpectrumData> = Vec::new();
     for result in gap_reader.deserialize() {
         let record: GapSpectrumData = result?;
-        if record.success_rate > 0.0 { // Only include gaps with data
-             gap_data.push(record);
+        if record.success_rate > 0.0 {
+            // Only include gaps with data
+            gap_data.push(record);
         }
     }
     let gap_json = serde_json::to_string(&gap_data)?;

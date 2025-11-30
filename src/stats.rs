@@ -32,7 +32,6 @@ impl BinStats {
     }
 }
 
-
 #[derive(Debug)]
 pub struct Statistics {
     pub total_primes: u64,

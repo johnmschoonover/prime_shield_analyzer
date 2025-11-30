@@ -7,7 +7,11 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
-pub fn write_results(stats: &Statistics, config: &Config, max_n: u64) -> Result<(), Box<dyn Error>> {
+pub fn write_results(
+    stats: &Statistics,
+    config: &Config,
+    max_n: u64,
+) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(&config.output_dir)?;
 
     write_global_stats(stats, config)?;
@@ -70,7 +74,8 @@ fn calculate_shielding_info(g: u64) -> ShieldingInfo {
     }
 
     // The General Rule (q >= 5)
-    for &q in SMALL_PRIMES.iter().skip(1) { // Skip 3 as it's already handled
+    for &q in SMALL_PRIMES.iter().skip(1) {
+        // Skip 3 as it's already handled
         let q_u64 = q as u64;
         if g % q_u64 == q_u64 - 1 {
             shield_score += 1;
@@ -104,18 +109,26 @@ struct GapSpectrumRecord {
     theoretical_boost: f64,
 }
 
-fn write_gap_spectrum(stats: &Statistics, config: &Config, max_n: u64) -> Result<(), Box<dyn Error>> {
+fn write_gap_spectrum(
+    stats: &Statistics,
+    config: &Config,
+    max_n: u64,
+) -> Result<(), Box<dyn Error>> {
     let path = Path::new(&config.output_dir).join("gap_spectrum.csv");
     let mut wtr = Writer::from_path(path)?;
-    
+
     let expected_rate = 1.0 / (max_n as f64).ln();
 
     let sorted_gaps: BTreeMap<_, _> = stats.gap_spectrum.iter().collect();
 
     for (&gap_size, &(count, successes)) in sorted_gaps {
-        let success_rate = if count > 0 { successes as f64 / count as f64 } else { 0.0 };
+        let success_rate = if count > 0 {
+            successes as f64 / count as f64
+        } else {
+            0.0
+        };
         let shielding_info = calculate_shielding_info(gap_size);
-        
+
         let record = GapSpectrumRecord {
             gap_size,
             count,
@@ -204,6 +217,9 @@ mod tests {
         let info_34 = calculate_shielding_info(34);
         assert_eq!(info_34.shield_score, 3);
         assert_eq!(info_34.shield_primes, "3,5,7");
-        assert_eq!(info_34.theoretical_boost, (3.0/2.0) * (5.0/4.0) * (7.0/6.0));
+        assert_eq!(
+            info_34.theoretical_boost,
+            (3.0 / 2.0) * (5.0 / 4.0) * (7.0 / 6.0)
+        );
     }
 }
