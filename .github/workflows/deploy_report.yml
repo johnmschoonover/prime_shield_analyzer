@@ -1,0 +1,42 @@
+name: Deploy Analysis Report
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Release
+        run: cargo build --release
+
+      - name: Run Analyzer
+        run: |
+          ./target/release/prime_shield_analyzer \
+            --max-exponent 7 \
+            --gaps 2,4,6,30,34 \
+            --web-report
+
+      - name: Prepare Deployment
+        run: |
+          mkdir public
+          cp results/report.html public/index.html
+          cp results/*.csv public/
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
