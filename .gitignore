@@ -73,3 +73,7 @@ yarn-error.log*
 venv/
 .venv/
 /html/ # If any other HTML output is generated outside results/
+
+# Local development environments
+.venv/
+.envrc
