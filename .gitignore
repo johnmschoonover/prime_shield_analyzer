@@ -77,3 +77,4 @@ venv/
 # Local development environments
 .venv/
 .envrc
+.direnv/
