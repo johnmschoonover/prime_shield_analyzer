@@ -12,18 +12,20 @@ repos:
     hooks:
       - id: cargo-fmt
         name: cargo fmt
-        entry: cargo fmt --
+        entry: cargo fmt
         language: system
         types: [rust]
         args: [--check]
+        pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy --
+        entry: cargo clippy --workspace -- -D warnings
         language: system
         types: [rust]
-        args: [-- -D warnings]
+        pass_filenames: false
       - id: cargo-check
         name: cargo check
-        entry: cargo check
+        entry: cargo check --workspace
         language: system
         types: [rust]
+        pass_filenames: false
