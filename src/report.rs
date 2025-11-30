@@ -156,39 +156,39 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
 
         <div class="summary">
 
-            <span><strong>Max N:</strong> 1E{max_exponent} <span class="info-tooltip">(i)<span class="tooltip-text">The upper bound (p_n) for the prime analysis.</span></span></span> |
+                        <span><strong>Max N:</strong> 1E{max_exponent} <span class="info-tooltip">ⓘ<span class="tooltip-text">The upper bound (p_n) for the prime analysis.</span></span></span> |
 
-            <span><strong>Analysis Bins:</strong> {bins} <span class="info-tooltip">(i)<span class="tooltip-text">The number of windows the analysis range is divided into. Higher numbers provide more detail but can be noisier.</span></span></span>
+                        <span><strong>Analysis Bins:</strong> {bins} <span class="info-tooltip">ⓘ<span class="tooltip-text">The number of windows the analysis range is divided into. Higher numbers provide more detail but can be noisier.</span></span></span>
 
-        </div>
-
-
-
-        <div class="chart-container">
-
-            <h2>Theory Verification <span class="info-tooltip">(i)<span class="tooltip-text">This chart plots the theoretical model (our 'boost' score) against the observed success rate to verify our hypothesis.</span></span></h2>
-
-            <canvas id="verificationChart"></canvas>
-
-        </div>
+                    </div>
 
 
 
-        <div class="chart-container">
+                    <div class="chart-container">
 
-            <h2>S=p_n+p_(n+1)-1 Primality Ratio Oscillation <span class="info-tooltip">(i)<span class="tooltip-text">Shows how the success rate changes across the number line, revealing density oscillations.</span></span></h2>
+                        <h2>Theory Verification <span class="info-tooltip">ⓘ<span class="tooltip-text">This chart plots the theoretical model (our 'boost' score) against the observed success rate to verify our hypothesis.</span></span></h2>
 
-            <canvas id="oscillationChart"></canvas>
+                        <canvas id="verificationChart"></canvas>
 
-        </div>
+                    </div>
 
 
 
-        <div class="chart-container">
+                    <div class="chart-container">
 
-            <h2>Gap Success Rate Spectrum <span class="info-tooltip">(i)<span class="tooltip-text">A bar chart showing the overall success rate for each prime gap size.</span></span></h2>
+                        <h2>S=p_n+p_(n+1)-1 Primality Ratio Oscillation <span class="info-tooltip">ⓘ<span class="tooltip-text">Shows how the success rate changes across the number line, revealing density oscillations.</span></span></h2>
 
-            <canvas id="gapChart"></canvas>
+                        <canvas id="oscillationChart"></canvas>
+
+                    </div>
+
+
+
+                    <div class="chart-container">
+
+                        <h2>Gap Success Rate Spectrum <span class="info-tooltip">ⓘ<span class="tooltip-text">A bar chart showing the overall success rate for each prime gap size.</span></span></h2>
+
+                        <canvas id="gapChart"></canvas>
 
         </div>
 
