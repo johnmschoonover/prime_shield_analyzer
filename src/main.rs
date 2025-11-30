@@ -134,7 +134,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if config.web_report {
         println!("Generating HTML report...");
         report::generate_report(&config, max_n)?;
-        println!("Report generated at {}/report.html", config.output_dir);
+        println!("Report generated at {}/index.html", config.output_dir);
     }
 
     Ok(())
