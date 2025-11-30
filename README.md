@@ -78,7 +78,7 @@ The most important visualization is the **"Theory Verification"** scatter plot i
 
 The near-perfect linear relationship ($R^2 \approx 1.0$) on this plot demonstrates that our Shielding Theory almost completely explains the observed success rate bias. The tooltips provide detailed data for each gap, highlighting key outliers like Gap 4 and Gap 34.
 
-![Theory Verification Scatter Plot](https://i.imgur.com/example.png)  <!-- Placeholder for a future image of the chart -->
+![Theory Verification Scatter Plot](./assets/scatter_plot.png)  <!-- Placeholder for a future image of the chart -->
 
 ## Future Work
 
