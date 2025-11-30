@@ -63,7 +63,7 @@ impl PrimeIterator {
         // Parallelize the marking of composites
         base_primes.par_iter().for_each(|&p_u32| {
             let p = p_u32 as u64;
-            let mut mark_start = (start + p - 1) / p * p;
+            let mut mark_start = start.div_ceil(p) * p;
             if p * p > start {
                 mark_start = p * p;
             }
@@ -79,7 +79,7 @@ impl PrimeIterator {
         });
 
         if start == 0 {
-            if segment.len() > 0 {
+            if !segment.is_empty() {
                 segment.set(0, true);
             }
             if segment.len() > 1 {
