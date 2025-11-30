@@ -14,7 +14,7 @@ struct GapSpectrumData {
     shield_primes: String,
 }
 
-pub fn generate_report(config: &Config) -> Result<(), Box<dyn Error>> {
+pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>> {
     let output_dir = &config.output_dir;
 
     // Read oscillation_series.csv dynamically
@@ -426,7 +426,19 @@ pub fn generate_report(config: &Config) -> Result<(), Box<dyn Error>> {
 
                 }},
 
-                scales: {{ y: {{ title: {{ display: true, text: 'Ratio' }} }}, x: {{ title: {{ display: true, text: 'N (Bin Start)' }} }} }}
+                scales: {{
+
+                    y: {{ title: {{ display: true, text: 'Ratio' }} }},
+
+                    x: {{
+
+                        title: {{ display: true, text: 'N (Bin Start)' }},
+
+                        max: {max_n}
+
+                    }}
+
+                }}
 
             }}
 
