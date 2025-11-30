@@ -92,13 +92,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Update high-interest gap occurrences in the correct bin
         // The occurrence is tied to the location of p_current
-        if target_gaps_set.contains(&gap)
-            && let Some(bin_index) = stats.get_bin_index(p_current)
-        {
-            *stats.bins[bin_index]
-                .gap_occurrences
-                .entry(gap)
-                .or_insert(0) += 1;
+        if target_gaps_set.contains(&gap) {
+            if let Some(bin_index) = stats.get_bin_index(p_current) {
+                *stats.bins[bin_index]
+                    .gap_occurrences
+                    .entry(gap)
+                    .or_insert(0) += 1;
+            }
         }
 
         // Check if S is prime
@@ -115,10 +115,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Update high-interest gap successes in the correct bin
             // The success is also tied to the location of p_current
-            if target_gaps_set.contains(&gap)
-                && let Some(bin_index) = stats.get_bin_index(p_current)
-            {
-                *stats.bins[bin_index].gap_successes.entry(gap).or_insert(0) += 1;
+            if target_gaps_set.contains(&gap) {
+                if let Some(bin_index) = stats.get_bin_index(p_current) {
+                    *stats.bins[bin_index].gap_successes.entry(gap).or_insert(0) += 1;
+                }
             }
         }
 

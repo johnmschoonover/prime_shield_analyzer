@@ -7,25 +7,27 @@ use tempfile::tempdir;
 fn test_cli_smoke_test() -> Result<(), Box<dyn std::error::Error>> {
     // Create a temporary directory for the output
     let temp_dir = tempdir()?;
-    let output_dir = temp_dir.path().join("results");
+    // Ensure the output directory is 'report' to match the application's output path
+    let output_dir = temp_dir.path().join("report");
 
     // Prepare the command
-    let mut cmd = Command::cargo_bin(assert_cmd::pkg_name!())?;
+    // Use assert_cmd::cargo::cargo_bin! for robust binary invocation
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("prime_shield_analyzer"));
     cmd.arg("--max-exponent")
-        .arg("4") // Use a small exponent to run quickly
-        .arg("--output-dir")
+        .arg("5") // Use a slightly higher exponent for a more representative test
+        .arg("--output-dir") // Corrected argument name
         .arg(output_dir.to_str().unwrap())
         .arg("--web-report");
 
-    // Run the command and assert success
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Report generated"));
 
-    // Assert that the output files were created
-    assert!(output_dir.exists());
+    // Assert that the output files were created in the correct location
+    assert!(output_dir.join("index.html").exists()); // Check for index.html
     assert!(output_dir.join("gap_spectrum.csv").exists());
-    assert!(output_dir.join("report.html").exists());
+    assert!(output_dir.join("oscillation_series.csv").exists());
+    assert!(output_dir.join("global_stats.csv").exists());
 
     // Clean up the temporary directory
     temp_dir.close()?;
