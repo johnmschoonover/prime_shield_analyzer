@@ -206,7 +206,7 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
         target_gaps_json = serde_json::to_string(&config.gaps)?,
     );
 
-    let report_path = Path::new(output_dir).join("report.html");
+    let report_path = Path::new(output_dir).join("index.html");
     fs::write(report_path, html_content)?;
 
     Ok(())
