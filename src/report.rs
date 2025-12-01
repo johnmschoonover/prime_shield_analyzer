@@ -54,431 +54,199 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
     let gap_json = serde_json::to_string(&gap_data)?;
 
     let html_content = format!(
-        r#"
-
-<!DOCTYPE html>
-
+        r#"<!DOCTYPE html>
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>Prime Sum Analysis Report</title>
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
     <style>
-
         body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f8f9fa; color: #212529; }}
-
         .container {{ max-width: 1200px; margin: 2rem auto; padding: 2rem; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
-
         h1, h2 {{ text-align: center; color: #343a40; }}
-
         .summary {{ text-align: center; margin-bottom: 2rem; color: #6c757d; font-size: 1.1em; }}
-
         .chart-container {{ margin-top: 2rem; }}
-
         .info-tooltip {{
-
             position: relative;
-
             display: inline-block;
-
             border-bottom: 1px dotted black;
-
             cursor: help;
-
             font-weight: bold;
-
             font-size: 0.8em;
-
             color: #007bff;
-
         }}
-
         .info-tooltip .tooltip-text {{
-
             visibility: hidden;
-
             width: 250px;
-
             background-color: #343a40;
-
             color: #fff;
-
             text-align: center;
-
             border-radius: 6px;
-
             padding: 5px;
-
             position: absolute;
-
             z-index: 1;
-
             bottom: 125%;
-
             left: 50%;
-
             margin-left: -125px;
-
             opacity: 0;
-
             transition: opacity 0.3s;
-
             font-weight: normal;
-
             font-size: 0.95em;
-
         }}
-
         .info-tooltip:hover .tooltip-text {{
-
             visibility: visible;
-
             opacity: 1;
-
         }}
-
     </style>
-
 </head>
-
 <body>
-
     <div class="container">
-
         <h1>Prime Sum Analysis Report</h1>
-
         <div class="summary">
-
-                        <span><strong>Max N:</strong> 1E{max_exponent} <span class="info-tooltip">ⓘ<span class="tooltip-text">The upper bound (p_n) for the prime analysis.</span></span></span> |
-
-                        <span><strong>Analysis Bins:</strong> {bins} <span class="info-tooltip">ⓘ<span class="tooltip-text">The number of windows the analysis range is divided into. Higher numbers provide more detail but can be noisier.</span></span></span>
-
-                    </div>
-
-
-
-                    <div class="chart-container">
-
-                        <h2>Theory Verification <span class="info-tooltip">ⓘ<span class="tooltip-text">This chart plots the theoretical model (our 'boost' score) against the observed success rate to verify our hypothesis.</span></span></h2>
-
-                        <canvas id="verificationChart"></canvas>
-
-                    </div>
-
-
-
-                    <div class="chart-container">
-
-                        <h2>S=p_n+p_(n+1)-1 Primality Ratio Oscillation <span class="info-tooltip">ⓘ<span class="tooltip-text">Shows how the success rate changes across the number line, revealing density oscillations.</span></span></h2>
-
-                        <canvas id="oscillationChart"></canvas>
-
-                    </div>
-
-
-
-                    <div class="chart-container">
-
-                        <h2>Gap Success Rate Spectrum <span class="info-tooltip">ⓘ<span class="tooltip-text">A bar chart showing the overall success rate for each prime gap size.</span></span></h2>
-
-                        <canvas id="gapChart"></canvas>
-
+            <span><strong>Max N:</strong> 1E{max_exponent} <span class="info-tooltip">ⓘ<span class="tooltip-text">The upper bound (p_n) for the prime analysis.</span></span></span> |
+            <span><strong>Analysis Bins:</strong> {bins} <span class="info-tooltip">ⓘ<span class="tooltip-text">The number of windows the analysis range is divided into. Higher numbers provide more detail but can be noisier.</span></span></span>
         </div>
-
+        <div class="chart-container">
+            <h2>Theory Verification <span class="info-tooltip">ⓘ<span class="tooltip-text">This chart plots the theoretical model (our 'boost' score) against the observed success rate to verify our hypothesis.</span></span></h2>
+            <canvas id="verificationChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <h2>S=p_n+p_(n+1)-1 Primality Ratio Oscillation <span class="info-tooltip">ⓘ<span class="tooltip-text">Shows how the success rate changes across the number line, revealing density oscillations.</span></span></h2>
+            <canvas id="oscillationChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <h2>Gap Success Rate Spectrum <span class="info-tooltip">ⓘ<span class="tooltip-text">A bar chart showing the overall success rate for each prime gap size.</span></span></h2>
+            <canvas id="gapChart"></canvas>
+        </div>
     </div>
-
-
-
     <script>
-
         const oscData = {osc_json};
-
         const gapData = {gap_json};
-
         const targetGaps = {target_gaps_json};
-
-
-
-        // --- Explanations for Tooltips ---
-
         const legendExplanations = {{
-
             'Ratio S_p / p': 'How often the sum is prime compared to a regular number of the same size. A value > 1 suggests a bias.',
-
             'Default': 'The observed success rate for this specific prime gap within this bin.'
-
         }};
-
         targetGaps.forEach(gap => {{
-
             legendExplanations[`Gap ${{gap}} Rate`] = `The success rate for gaps of size ${{gap}} in this specific bin.`;
-
         }});
-
-
-
-        // --- Verification Chart (New) ---
-
         function calculateLinearRegression(data) {{
-
             const n = data.length;
-
             if (n === 0) return {{ m: 0, b: 0 }};
-
-
-
             let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-
             data.forEach(p => {{ sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumXX += p.x * p.x; }});
-
-
-
             const m = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-
             const b = (sumY - m * sumX) / n;
-
             return {{ m, b }};
-
         }}
-
-
-
         const verificationData = gapData.map(d => ({{
-
             x: d.theoretical_boost,
-
             y: d.success_rate,
-
             gap: d.gap_size,
-
             score: d.shield_score,
-
             primes: d.shield_primes
-
         }}));
-
-
-
         const regression = calculateLinearRegression(verificationData);
-
         const trendlineData = verificationData.map(p => ({{ x: p.x, y: regression.m * p.x + regression.b }}));
-
-
-
         new Chart(document.getElementById('verificationChart'), {{
-
             type: 'scatter',
-
             data: {{
-
                 datasets: [
-
                     {{
-
                         label: 'Gaps',
-
                         data: verificationData,
-
                         backgroundColor: verificationData.map(p => {{
-
                             if (p.gap === 4) return 'rgba(255, 99, 132, 1)'; // Red for Gap 4
-
                             if (p.gap === 34) return 'rgba(54, 162, 235, 1)'; // Blue for Gap 34
-
                             return 'rgba(0, 0, 0, 0.3)'; // Default
-
                         }}),
-
                         pointRadius: verificationData.map(p => (p.gap === 4 || p.gap === 34) ? 7 : 4),
-
                     }},
-
                     {{
-
                         label: 'Trendline',
-
                         data: trendlineData,
-
                         type: 'line',
-
                         borderColor: 'rgba(75, 192, 192, 1)',
-
                         borderWidth: 2,
-
                         pointRadius: 0,
-
                         tension: 0.1
-
                     }}
-
                 ]
-
             }},
-
             options: {{
-
                 plugins: {{
-
                     tooltip: {{
-
                         callbacks: {{
-
                             label: function(context) {{
-
                                 const d = context.raw;
-
                                 return `Gap: ${{d.gap}} | Boost: ${{d.x.toFixed(2)}} | Rate: ${{d.y.toFixed(3)}} | Score: ${{d.score}} | Primes: ${{d.primes || 'none'}}`;
-
                             }}
-
                         }}
-
                     }}
-
                 }},
-
                 scales: {{
-
                     x: {{ title: {{ display: true, text: 'Theoretical Boost' }} }},
-
                     y: {{ title: {{ display: true, text: 'Observed Success Rate' }} }}
-
                 }}
-
             }}
-
         }});
-
-
-
-
-
-        // --- Oscillation Chart ---
-
         const oscillationDatasets = [ {{ label: 'Ratio S_p / p', data: oscData.map(d => d.ratio_s_p), borderColor: 'rgba(75, 192, 192, 1)', tension: 0.1 }} ];
-
         const colors = [
-
             'rgba(255, 99, 132, 0.5)', 'rgba(54, 162, 235, 0.5)', 'rgba(255, 206, 86, 0.5)',
-
             'rgba(75, 192, 192, 0.5)', 'rgba(153, 102, 255, 0.5)', 'rgba(255, 159, 64, 0.5)'
-
         ];
-
         let colorIndex = 0;
-
         targetGaps.forEach(gap => {{
-
             const gapKey = `gap_${{gap}}_rate`;
-
             if (oscData.length > 0 && oscData[0][gapKey] !== undefined) {{
-
                 oscillationDatasets.push({{
-
                     label: `Gap ${{gap}} Rate`,
-
                     data: oscData.map(d => d[gapKey]),
-
                     borderColor: colors[colorIndex % colors.length],
-
                     hidden: true,
-
                 }});
-
                 colorIndex++;
-
             }}
-
         }});
-
         new Chart(document.getElementById('oscillationChart'), {{
-
             type: 'line',
-
             data: {{ labels: oscData.map(d => d.bin_start), datasets: oscillationDatasets }},
-
             options: {{
-
                 plugins: {{
-
                     tooltip: {{
-
                         callbacks: {{
-
                             afterBody: function(context) {{
-
                                 const datasetLabel = context[0].dataset.label;
-
                                 return legendExplanations[datasetLabel] || legendExplanations['Default'];
-
                             }}
-
                         }}
-
                     }}
-
                 }},
-
                 scales: {{
-
                     y: {{ title: {{ display: true, text: 'Ratio' }} }},
-
                     x: {{
-
                         title: {{ display: true, text: 'N (Bin Start)' }},
-
                         max: {max_n}
-
                     }}
-
                 }}
-
             }}
-
         }});
-
-
-
-        // --- Gap Spectrum Chart ---
-
         new Chart(document.getElementById('gapChart'), {{
-
             type: 'bar',
-
             data: {{
-
                 labels: gapData.filter(d=>d.gap_size <= 60).map(d => d.gap_size),
-
                 datasets: [{{
-
                     label: 'Success Rate',
-
                     data: gapData.filter(d=>d.gap_size <= 60).map(d => d.success_rate),
-
                     backgroundColor: 'rgba(153, 102, 255, 0.6)'
-
                 }}]
-
             }},
-
             options: {{ scales: {{ y: {{ beginAtZero: true, title: {{ display: true, text: 'Success Rate' }} }}, x: {{ title: {{ display: true, text: 'Gap Size' }} }} }} }}
-
         }});
-
     </script>
-
 </body>
-
-</html>
-
-"#,
+</html>"#,
         max_exponent = config.max_exponent,
         bins = config.bins,
         osc_json = osc_json,
