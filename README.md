@@ -78,11 +78,9 @@ The most important visualization is the **"Theory Verification"** scatter plot i
 
 The near-perfect linear relationship ($R^2 \approx 1.0$) on this plot demonstrates that our Shielding Theory almost completely explains the observed success rate bias. The tooltips provide detailed data for each gap, highlighting key outliers like Gap 4 and Gap 34.
 
-> **[Click Here to View the Full Interactive Report](https://johnmschoonover.github.io/prime-shield-analyzer/)**
+> **[Click Here to View the Full Interactive Report](https://johnmschoonover.github.io/prime_shield_analyzer/)**
 
-[![View Interactive Report](https://img.shields.io/badge/View-Interactive_Report-blue.svg)](https://johnmschoonover.github.io/prime-shield-analyzer/)
-
-*Note: The interactive report is automatically generated and deployed via GitHub Actions. You may need to enable GitHub Pages in your repository settings under `Settings > Pages > Build and deployment` by selecting "GitHub Actions" as the source.*
+[![View Interactive Report](https://img.shields.io/badge/View-Interactive_Report-blue.svg)](https://johnmschoonover.github.io/prime_shield_analyzer/)
 
 ## Future Work
 
