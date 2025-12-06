@@ -45,11 +45,12 @@ def validate_general(g_k, primes_list, target_mod, target_rem):
                 return False
 
         # General Case: Primes >= 5
-        # The gap must be -1 mod p (or p-1 mod p) to shield against p.
-        # This ensures that S_n = p_n + p_{n+1} - 1 is NOT divisible by p.
+        # The gap must be 1 mod p to shield against p.
+        # Proof: S = 2p + g - 1. If g = 1 mod p, then g-1 is a multiple of p.
+        # S = 2p + k*p = 2p (mod p). Since p > q, 2p != 0. Thus S is never 0 mod p.
         elif p >= 5:
-            if g_k % p != p - 1:
-                logging.error(f"Subsequent shield check failed for {g_k} with prime {p}. Expected rem {p - 1}, got {g_k % p}.")
+            if g_k % p != 1:
+                logging.error(f"Subsequent shield check failed for {g_k} with prime {p}. Expected rem 1, got {g_k % p}.")
                 return False
 
     return True
@@ -61,7 +62,7 @@ def generate_shield_generals(n_terms: int) -> List[int]:
 
     A Shield General G_k is defined as the smallest even integer such that:
       1. G_k = 1 mod 3
-      2. G_k = p_i - 1 mod p_i for all primes 5 <= p_i <= p_k
+      2. G_k = 1 mod p_i for all primes 5 <= p_i <= p_k
 
     This function uses a "Ratchet" mechanism to efficiently find the next General.
     Instead of searching from scratch, it increments by the product of previous primes
@@ -111,8 +112,9 @@ def generate_shield_generals(n_terms: int) -> List[int]:
         # Identify the NEW prime we need to shield against (p_{k+1}).
         p_new = nextprime(p_k)
 
-        # The target remainder for this new prime is -1 (or p_new - 1).
-        r_new = p_new - 1
+        # The target remainder for this new prime is 1.
+        # We want g = 1 mod p_new.
+        r_new = 1
 
         # Search for the smallest k such that:
         # candidate = current_general + k * current_cycle
@@ -161,7 +163,6 @@ def generate_shield_generals(n_terms: int) -> List[int]:
         p_k = p_new
 
     return results
-
 
 if __name__ == "__main__":
     # Set up command line argument parsing

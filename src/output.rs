@@ -77,7 +77,11 @@ fn calculate_shielding_info(g: u64) -> ShieldingInfo {
     for &q in SMALL_PRIMES.iter().skip(1) {
         // Skip 3 as it's already handled
         let q_u64 = q as u64;
-        if g % q_u64 == q_u64 - 1 {
+        // CORRECTION: A gap is shielded if g = 1 mod q.
+        // Proof: S = 2p + g - 1. If g = 1 mod q, then g - 1 = k*q.
+        // S = 2p + k*q = 2p (mod q). Since p is prime > q, 2p != 0 (mod q).
+        // Thus S is never divisible by q.
+        if g % q_u64 == 1 {
             shield_score += 1;
             shield_primes_vec.push(q);
             theoretical_boost *= q_u64 as f64 / (q_u64 - 1) as f64;
@@ -165,11 +169,14 @@ fn write_oscillation_series(stats: &Statistics, config: &Config) -> Result<(), B
 
     // Dynamically write data rows
     for bin in &stats.bins {
-        let ratio_s_p = if bin.prime_count_p > 0 {
-            bin.prime_count_s as f64 / bin.prime_count_p as f64
-        } else {
-            0.0
-        };
+        // Only write bins that contain actual prime data (prime_count_p > 0)
+        // This prevents long stretches of zero data at the end of the graph
+        // for smaller max_exponent values, improving graph readability.
+        if bin.prime_count_p == 0 {
+            continue;
+        }
+
+        let ratio_s_p = bin.prime_count_s as f64 / bin.prime_count_p as f64;
 
         let mut record: Vec<String> = vec![
             bin.bin_start.to_string(),
@@ -207,19 +214,35 @@ mod tests {
         assert_eq!(info_2.shield_primes, "");
         assert_eq!(info_2.theoretical_boost, 1.0);
 
-        // Test Gap 4: Shielded by 3 and 5
+        // Test Gap 4: Shielded by 3 only (4 % 5 = 4 != 1)
         let info_4 = calculate_shielding_info(4);
-        assert_eq!(info_4.shield_score, 2);
-        assert_eq!(info_4.shield_primes, "3,5");
-        assert_eq!(info_4.theoretical_boost, 1.5 * (5.0 / 4.0));
+        assert_eq!(info_4.shield_score, 1);
+        assert_eq!(info_4.shield_primes, "3");
+        assert_eq!(info_4.theoretical_boost, 1.5);
 
-        // Test Gap 34 ("King"): Shielded by 3, 5, 7
+        // Test Gap 6: Shielded by 5 (6 % 5 = 1)
+        let info_6 = calculate_shielding_info(6);
+        assert_eq!(info_6.shield_score, 1);
+        assert_eq!(info_6.shield_primes, "5");
+        assert_eq!(info_6.theoretical_boost, 1.25);
+
+        // Test Gap 34: Shielded by 3 and 11
+        // 34 % 3 = 1 (Shield)
+        // 34 % 5 = 4 (No)
+        // 34 % 7 = 6 (No)
+        // 34 % 11 = 1 (Shield)
         let info_34 = calculate_shielding_info(34);
-        assert_eq!(info_34.shield_score, 3);
-        assert_eq!(info_34.shield_primes, "3,5,7");
-        assert_eq!(
-            info_34.theoretical_boost,
-            (3.0 / 2.0) * (5.0 / 4.0) * (7.0 / 6.0)
-        );
+        assert_eq!(info_34.shield_score, 2);
+        assert_eq!(info_34.shield_primes, "3,11");
+        assert_eq!(info_34.theoretical_boost, (3.0 / 2.0) * (11.0 / 10.0));
+
+        // Test Gap 56: Shielded by 5 and 11
+        // 56 % 3 = 2 (No)
+        // 56 % 5 = 1 (Shield)
+        // 56 % 11 = 1 (Shield)
+        let info_56 = calculate_shielding_info(56);
+        assert_eq!(info_56.shield_score, 2);
+        assert_eq!(info_56.shield_primes, "5,11");
+        assert_eq!(info_56.theoretical_boost, (5.0 / 4.0) * (11.0 / 10.0));
     }
 }

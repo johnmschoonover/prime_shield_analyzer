@@ -121,6 +121,34 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
             visibility: visible;
             opacity: 1;
         }
+        .btn-group {
+            display: flex;
+            justify_content: center;
+            margin-bottom: 1rem;
+        }
+        .btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid #6c757d;
+            background-color: #fff;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .btn:first-child {
+            border-top-left-radius: 4px;
+            border-bottom-left-radius: 4px;
+        }
+        .btn:last-child {
+            border-top-right-radius: 4px;
+            border-bottom-right-radius: 4px;
+        }
+        .btn.active {
+            background-color: #6c757d;
+            color: #fff;
+        }
+        .btn:hover:not(.active) {
+            background-color: #e9ecef;
+        }
     </style>
 </head>
 <body>
@@ -142,12 +170,36 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
         </div>
 
         <div class="chart-container">
-            <h2>Gap Success Rate Spectrum <span class="info-tooltip">ⓘ<span class="tooltip-text">A bar chart showing the overall success rate for each prime gap size.</span></span></h2>
+            <h2>Gap Success Rate Spectrum <span class="info-tooltip">ⓘ<span class="tooltip-text">Visualize the success rate for each prime gap size.</span></span></h2>
+            <div class="btn-group">
+                <button class="btn active" onclick="toggleGapChart('bar')">Bar View</button>
+                <button class="btn" onclick="toggleGapChart('polar')">Polar View (Shield Star)</button>
+            </div>
             <canvas id="gapChart"></canvas>
+            <canvas id="gapPolarChart" style="display: none;"></canvas>
         </div>
     </div>
 
     <script>
+        // Toggle function needs to be global
+        window.toggleGapChart = function(viewType) {
+            const barCanvas = document.getElementById('gapChart');
+            const polarCanvas = document.getElementById('gapPolarChart');
+            const buttons = document.querySelectorAll('.btn-group .btn');
+
+            if (viewType === 'bar') {
+                barCanvas.style.display = 'block';
+                polarCanvas.style.display = 'none';
+                buttons[0].classList.add('active');
+                buttons[1].classList.remove('active');
+            } else {
+                barCanvas.style.display = 'none';
+                polarCanvas.style.display = 'block';
+                buttons[0].classList.remove('active');
+                buttons[1].classList.add('active');
+            }
+        };
+
         async function loadDataAndRenderCharts() {
             const oscResponse = await fetch('oscillation_series.json');
             const oscData = await oscResponse.json();
@@ -250,9 +302,7 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
             });
 
             // --- Oscillation Chart ---
-            // Filter out the last data point which is always zero
-            const filteredOscData = oscData.slice(0, oscData.length - 1);
-            const oscillationDatasets = [ { label: 'Ratio S_p / p', data: filteredOscData.map(d => d.ratio_s_p), borderColor: 'rgba(75, 192, 192, 1)', tension: 0.1 } ];
+            const oscillationDatasets = [ { label: 'Ratio S_p / p', data: oscData.map(d => d.ratio_s_p), borderColor: 'rgba(75, 192, 192, 1)', tension: 0.1 } ];
             const colors = [
                 'rgba(255, 99, 132, 0.5)', 'rgba(54, 162, 235, 0.5)', 'rgba(255, 206, 86, 0.5)',
                 'rgba(75, 192, 192, 0.5)', 'rgba(153, 102, 255, 0.5)', 'rgba(255, 159, 64, 0.5)'
@@ -260,19 +310,18 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
             let colorIndex = 0;
             targetGaps.forEach(gap => {
                 const gapKey = `gap_${gap}_rate`;
-                if (filteredOscData.length > 0 && filteredOscData[0][gapKey] !== undefined) {
+                if (oscData.length > 0 && oscData[0][gapKey] !== undefined) {
                     oscillationDatasets.push({
                         label: `Gap ${gap} Rate`,
-                        data: filteredOscData.map(d => d[gapKey]),
+                        data: oscData.map(d => d[gapKey]),
                         borderColor: colors[colorIndex % colors.length],
-                        hidden: true,
                     });
                     colorIndex++;
                 }
             });
             new Chart(document.getElementById('oscillationChart'), {
                 type: 'line',
-                data: { labels: filteredOscData.map(d => d.bin_start), datasets: oscillationDatasets },
+                data: { labels: oscData.map(d => d.bin_start), datasets: oscillationDatasets },
                 options: {
                     plugins: {
                         tooltip: {
@@ -294,18 +343,57 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
                 }
             });
 
-            // --- Gap Spectrum Chart ---
+            // --- Gap Spectrum Chart (Bar) ---
+            const gapDataLimited = gapData.filter(d => d.gap_size <= 60);
+
             new Chart(document.getElementById('gapChart'), {
                 type: 'bar',
                 data: {
-                    labels: gapData.filter(d=>d.gap_size <= 60).map(d => d.gap_size),
+                    labels: gapDataLimited.map(d => d.gap_size),
                     datasets: [{
                         label: 'Success Rate',
-                        data: gapData.filter(d=>d.gap_size <= 60).map(d => d.success_rate),
+                        data: gapDataLimited.map(d => d.success_rate),
                         backgroundColor: 'rgba(153, 102, 255, 0.6)'
                     }]
                 },
                 options: { scales: { y: { beginAtZero: true, title: { display: true, text: 'Success Rate' } }, x: { title: { display: true, text: 'Gap Size' } } } }
+            });
+
+            // --- Gap Spectrum Chart (Polar) ---
+            // Color mapping based on Shield Score
+            const polarColors = gapDataLimited.map(d => {
+                switch(d.shield_score) {
+                    case 0: return 'rgba(201, 203, 207, 0.6)'; // Grey
+                    case 1: return 'rgba(255, 205, 86, 0.6)'; // Yellow
+                    case 2: return 'rgba(255, 159, 64, 0.6)'; // Orange
+                    case 3: return 'rgba(54, 162, 235, 0.6)'; // Blue
+                    default: return 'rgba(54, 162, 235, 0.6)'; // Blue for >3
+                }
+            });
+
+            new Chart(document.getElementById('gapPolarChart'), {
+                type: 'polarArea',
+                data: {
+                    labels: gapDataLimited.map(d => `Gap ${d.gap_size} (Score: ${d.shield_score})`),
+                    datasets: [{
+                        label: 'Success Rate',
+                        data: gapDataLimited.map(d => d.success_rate),
+                        backgroundColor: polarColors
+                    }]
+                },
+                options: {
+                    plugins: {
+                        legend: { position: 'right' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const d = gapDataLimited[context.dataIndex];
+                                    return `Rate: ${d.success_rate.toFixed(3)} | Shield Score: ${d.shield_score}`;
+                                }
+                            }
+                        }
+                    }
+                }
             });
         }
         loadDataAndRenderCharts();
