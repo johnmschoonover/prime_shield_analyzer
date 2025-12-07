@@ -6,6 +6,7 @@ mod stats;
 
 use clap::Parser;
 use indicatif::ProgressBar;
+use rayon::prelude::*;
 use sieve::{PrimalityChecker, PrimeIterator};
 use stats::Statistics;
 
@@ -75,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut prime_iterator = PrimeIterator::new(max_n, segment_size_bytes);
     let analysis_limit = max_n * 2;
-    let mut primality_checker = PrimalityChecker::new(analysis_limit, segment_size_bytes);
+    let primality_checker = PrimalityChecker::new(analysis_limit, segment_size_bytes);
 
     let mut stats = Statistics::new(max_n, config.bins, &sorted_target_gaps);
 
@@ -95,77 +96,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         prime_iterator.next();
     }
 
-    // --- Optimization 2: Fast-Path Gap Cache ---
-    // Avoid HashMap insertions for every single gap. Buffer small gaps in an array.
-    const MAX_FAST_GAP: usize = 320;
-    let mut gap_counts = vec![0u64; MAX_FAST_GAP];
-    let mut gap_successes = vec![0u64; MAX_FAST_GAP];
+    // --- Parallel Batch Processing ---
+    const BATCH_SIZE: usize = 262_144; // 2^18
+    let mut batch = Vec::with_capacity(BATCH_SIZE);
 
-    // Main Loop
     for p_current in prime_iterator {
-        stats.total_primes += 1;
+        batch.push(p_current);
 
-        // Hot Path: Bin Index Calculation
-        // Inlining this logic manually or trusting the compiler.
-        // For simple bins, (n / size) is fast.
-        if let Some(bin_index) = stats.get_bin_index(p_current) {
-            stats.bins[bin_index].prime_count_p += 1;
+        if batch.len() >= BATCH_SIZE {
+            process_batch(
+                &batch,
+                p_prev,
+                &primality_checker,
+                &mut stats,
+                max_n,
+                config.bins,
+                &sorted_target_gaps,
+                &is_target_gap,
+            );
 
-            let gap = p_current - p_prev;
-            let s = p_current + p_prev - 1;
-
-            // 1. Record Gap Occurrence
-            if (gap as usize) < MAX_FAST_GAP {
-                gap_counts[gap as usize] += 1;
-            } else {
-                stats.gap_spectrum.entry(gap).or_insert((0, 0)).0 += 1;
-            }
-
-            // High-interest gap tracking (Bin specific)
-            if is_target_gap(gap) {
-                *stats.bins[bin_index]
-                    .gap_occurrences
-                    .entry(gap)
-                    .or_insert(0) += 1;
-            }
-
-            // 2. Check S
-            if primality_checker.is_prime(s) {
-                stats.total_s_primes += 1;
-                stats.bins[bin_index].prime_count_s += 1;
-
-                if (gap as usize) < MAX_FAST_GAP {
-                    gap_successes[gap as usize] += 1;
-                } else {
-                    stats.gap_spectrum.entry(gap).or_insert((0, 0)).1 += 1;
-                }
-
-                if is_target_gap(gap) {
-                    *stats.bins[bin_index].gap_successes.entry(gap).or_insert(0) += 1;
-                }
-            }
+            p_prev = *batch.last().unwrap();
+            bar.inc(batch.len() as u64);
+            batch.clear();
         }
+    }
 
-        p_prev = p_current;
-
-        // --- Optimization 3: Throttled UI Updates ---
-        // Only update progress bar every ~250k primes.
-        // 0x3FFFF is a bitmask for 262,143.
-        if (stats.total_primes & 0x3FFFF) == 0 {
-            bar.set_position(p_current);
-        }
+    // Process remaining primes
+    if !batch.is_empty() {
+        process_batch(
+            &batch,
+            p_prev,
+            &primality_checker,
+            &mut stats,
+            max_n,
+            config.bins,
+            &sorted_target_gaps,
+            &is_target_gap,
+        );
+        bar.inc(batch.len() as u64);
     }
 
     bar.finish_with_message("Analysis complete.");
-
-    // Flush Fast-Path Cache to HashMap
-    for gap in 0..MAX_FAST_GAP {
-        if gap_counts[gap] > 0 {
-            let entry = stats.gap_spectrum.entry(gap as u64).or_insert((0, 0));
-            entry.0 += gap_counts[gap];
-            entry.1 += gap_successes[gap];
-        }
-    }
 
     println!("Writing results...");
     output::write_results(&stats, &config, max_n)?;
@@ -177,4 +148,71 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_batch<F>(
+    batch: &[u64],
+    p_prev_start: u64,
+    primality_checker: &PrimalityChecker,
+    global_stats: &mut Statistics,
+    max_n: u64,
+    num_bins: usize,
+    target_gaps: &[u64],
+    is_target_gap: &F,
+) where
+    F: Fn(u64) -> bool + Sync + Send,
+{
+    // Parallel Map-Reduce
+    let batch_stats = batch
+        .par_iter()
+        .zip(rayon::iter::once(&p_prev_start).chain(batch.par_iter()))
+        .fold(
+            || Statistics::new(max_n, num_bins, target_gaps),
+            |mut local_stats, (&p_current, &p_prev)| {
+                local_stats.total_primes += 1;
+
+                if let Some(bin_index) = local_stats.get_bin_index(p_current) {
+                    local_stats.bins[bin_index].prime_count_p += 1;
+
+                    let gap = p_current - p_prev;
+                    let s = p_current + p_prev - 1;
+
+                    // 1. Record Gap Occurrence
+                    local_stats.gap_spectrum.entry(gap).or_insert((0, 0)).0 += 1;
+
+                    if is_target_gap(gap) {
+                        *local_stats.bins[bin_index]
+                            .gap_occurrences
+                            .entry(gap)
+                            .or_insert(0) += 1;
+                    }
+
+                    // 2. Check S
+                    if primality_checker.is_prime(s) {
+                        local_stats.total_s_primes += 1;
+                        local_stats.bins[bin_index].prime_count_s += 1;
+
+                        local_stats.gap_spectrum.entry(gap).or_insert((0, 0)).1 += 1;
+
+                        if is_target_gap(gap) {
+                            *local_stats.bins[bin_index]
+                                .gap_successes
+                                .entry(gap)
+                                .or_insert(0) += 1;
+                        }
+                    }
+                }
+                local_stats
+            },
+        )
+        .reduce(
+            || Statistics::new(max_n, num_bins, target_gaps),
+            |mut a, b| {
+                a.merge(&b);
+                a
+            },
+        );
+
+    global_stats.merge(&batch_stats);
 }

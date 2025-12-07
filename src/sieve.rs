@@ -1,6 +1,7 @@
 use bitvec::prelude::*;
 use rayon::prelude::*;
 use std::collections::VecDeque;
+use std::sync::RwLock;
 
 /// An iterator that generates primes up to a given limit using a segmented sieve.
 pub struct PrimeIterator {
@@ -229,7 +230,7 @@ pub struct PrimalityChecker {
     base_primes: Vec<u32>,
     known_primes_under_sqrt: BitVec<u8, Lsb0>,
 
-    cached_segments: VecDeque<(u64, BitVec<u64, Lsb0>)>,
+    cached_segments: RwLock<VecDeque<(u64, BitVec<u64, Lsb0>)>>,
     cache_size: usize,
     segment_size_bits: u64,
 }
@@ -257,13 +258,13 @@ impl PrimalityChecker {
             sqrt_limit,
             base_primes,
             known_primes_under_sqrt: base_sieve,
-            cached_segments: VecDeque::with_capacity(4),
+            cached_segments: RwLock::new(VecDeque::with_capacity(4)),
             cache_size: 4,
             segment_size_bits: (segment_size_bytes * 8) as u64,
         }
     }
 
-    pub fn is_prime(&mut self, n: u64) -> bool {
+    pub fn is_prime(&self, n: u64) -> bool {
         if n > self.limit {
             return false;
         }
@@ -273,23 +274,39 @@ impl PrimalityChecker {
 
         let segment_start = (n / self.segment_size_bits) * self.segment_size_bits;
 
-        for (start, segment) in &self.cached_segments {
+        // 1. Try to find in cache with Read Lock
+        {
+            let cache_read = self.cached_segments.read().unwrap();
+            for (start, segment) in cache_read.iter() {
+                if *start == segment_start {
+                    let index = (n - segment_start) as usize;
+                    return !segment[index];
+                }
+            }
+        }
+
+        // 2. Not found, acquire Write Lock
+        let mut cache_write = self.cached_segments.write().unwrap();
+
+        // 3. Double-check (another thread might have added it)
+        for (start, segment) in cache_write.iter() {
             if *start == segment_start {
                 let index = (n - segment_start) as usize;
                 return !segment[index];
             }
         }
 
+        // 4. Generate new segment
         let segment_end = segment_start + self.segment_size_bits;
         let new_segment =
             PrimeIterator::sieve_segment(segment_start, segment_end, &self.base_primes);
 
         let is_p = !new_segment[(n - segment_start) as usize];
 
-        if self.cached_segments.len() >= self.cache_size {
-            self.cached_segments.pop_front();
+        if cache_write.len() >= self.cache_size {
+            cache_write.pop_front();
         }
-        self.cached_segments.push_back((segment_start, new_segment));
+        cache_write.push_back((segment_start, new_segment));
 
         is_p
     }
