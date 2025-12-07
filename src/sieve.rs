@@ -50,17 +50,28 @@ impl PrimeIterator {
     fn sieve_segment(start: u64, end: u64, base_primes: &[u32]) -> BitVec<u64, Lsb0> {
         let mut segment = bitvec![u64, Lsb0; 0; (end - start) as usize]; // 0 means prime
 
-        // Parallelize over memory chunks (Domain Decomposition) to avoid false sharing.
-        // We process the raw u64 slice in parallel chunks.
+        // Parallelize over memory chunks (Domain Decomposition).
+        // CRITICAL OPTIMIZATION: Thread-Aligned Chunking.
+        // We calculate chunk_size such that we have roughly 1 chunk per thread.
+        // This minimizes the overhead of calculating the initial prime offset (modulo),
+        // which can be expensive if done for many small chunks.
         let raw_slice = segment.as_raw_mut_slice();
-        const CHUNK_SIZE: usize = 4096; // 4096 u64s = 32KB
+        let len_u64 = raw_slice.len();
+
+        let num_threads = rayon::current_num_threads();
+        let multiplier = 4; // Create 4x chunks to allow P-cores to steal work from E-cores
+        let chunk_size = if num_threads > 0 {
+            len_u64.div_ceil(num_threads * multiplier).max(4096)
+        } else {
+            len_u64.max(1)
+        };
 
         raw_slice
-            .par_chunks_mut(CHUNK_SIZE)
+            .par_chunks_mut(chunk_size)
             .enumerate()
             .for_each(|(chunk_idx, chunk)| {
                 // Determine the range of global bits this chunk covers
-                let chunk_start_word_idx = chunk_idx * CHUNK_SIZE;
+                let chunk_start_word_idx = chunk_idx * chunk_size;
                 let chunk_start_bit = start + (chunk_start_word_idx as u64 * 64);
                 let chunk_len_bits = chunk.len() as u64 * 64;
 
