@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::stats::Statistics;
 use csv::Writer;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -57,49 +57,69 @@ struct ShieldingInfo {
     theoretical_boost: f64,
 }
 
-// Pre-compute primes up to 100 for the shielding calculation.
-const SMALL_PRIMES: &[u32] = &[
-    3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
-];
+// Helper to get unique prime factors
+fn get_prime_factors(mut n: u64) -> Vec<u64> {
+    let mut factors = Vec::new();
+    if n < 2 {
+        return factors;
+    }
+
+    // Handle 2 separately
+    if n % 2 == 0 {
+        factors.push(2);
+        while n % 2 == 0 {
+            n /= 2;
+        }
+    }
+
+    // Handle odd factors
+    let mut i = 3;
+    while i * i <= n {
+        if n % i == 0 {
+            factors.push(i);
+            while n % i == 0 {
+                n /= i;
+            }
+        }
+        i += 2;
+    }
+    if n > 1 {
+        factors.push(n);
+    }
+    factors
+}
 
 fn calculate_shielding_info(g: u64) -> ShieldingInfo {
-    // --- DEBUG TRAP START ---
-    if g == 56 {
-        println!("!!! DEBUG TRAP FOR GAP 56 !!!");
-        println!("Mod 3 Residue: {} (Should be 2)", g % 3);
-        println!("Mod 19 Residue: {} (Should be 18)", g % 19);
-    }
-    // --- DEBUG TRAP END ---
+    let mut unique_shields = BTreeSet::new();
 
-    let mut shield_score = 0;
-    let mut shield_primes_vec = Vec::new();
+    // 1. Neighbor Hazards (g - 1)
+    // Corresponds to g = 1 mod q (Natural Shield)
+    for p in get_prime_factors(g - 1) {
+        unique_shields.insert(p);
+    }
+
+    // 2. Neighbor Hazards (g + 1)
+    // Corresponds to g = -1 mod q (Selection Shield)
+    for p in get_prime_factors(g + 1) {
+        unique_shields.insert(p);
+    }
+
+    // Filter out 2 (handled by parity)
+    unique_shields.remove(&2);
+
     let mut theoretical_boost = 1.0;
+    let mut shield_primes_vec: Vec<u64> = Vec::new();
 
-    // The Mod 3 Rule
-    // If g % 3 == 1, S = 2p is never 0 mod 3.
-    // If g % 3 == 2, valid prime gaps only exist for p = 2 mod 3.
-    // (p = 1 mod 3 implies p+g is divisible by 3, so neighbor is composite).
-    // In this forced case, S = 2(2) + 2 - 1 = 5 = 2 mod 3.
-    // Thus, ANY gap not divisible by 3 is shielded from 3.
-    if g % 3 != 0 {
-        shield_score += 1;
-        shield_primes_vec.push(3);
-        theoretical_boost *= 3.0 / 2.0;
+    for &q in &unique_shields {
+        shield_primes_vec.push(q);
+        theoretical_boost *= q as f64 / (q as f64 - 1.0);
     }
 
-    // The General Rule (q >= 5)
-    for &q in SMALL_PRIMES.iter().skip(1) {
-        // Skip 3 as it's already handled
-        let q_u64 = q as u64;
-        // Shield Condition: g = 1 mod q OR g = -1 mod q.
-        // Natural Shield: g = 1 mod q => S = 2p mod q (Never 0).
-        // Selection Shield: g = -1 mod q => S = 2(p-1) mod q. Fails if p=1.
-        // But if p=1, p+g = 0 mod q (Composite). So valid pairs never fail.
-        if g % q_u64 == 1 || g % q_u64 == q_u64 - 1 {
-            shield_score += 1;
-            shield_primes_vec.push(q);
-            theoretical_boost *= q_u64 as f64 / (q_u64 - 1) as f64;
-        }
+    // Mod 3 Trap: If g % 3 == 0, S = 2p + g - 1 fails whenever p = 2 mod 3 (50% of odd primes).
+    // Baseline probability of a random odd number being coprime to 3 is 2/3 (66%).
+    // The ratio of Trap Success (1/2) to Baseline (2/3) is (1/2) / (2/3) = 3/4 = 0.75.
+    if g % 3 == 0 {
+        theoretical_boost *= 0.75;
     }
 
     let shield_primes = shield_primes_vec
@@ -109,7 +129,7 @@ fn calculate_shielding_info(g: u64) -> ShieldingInfo {
         .join(",");
 
     ShieldingInfo {
-        shield_score,
+        shield_score: unique_shields.len() as u32,
         shield_primes,
         theoretical_boost,
     }
@@ -135,7 +155,9 @@ fn write_gap_spectrum(
     let path = Path::new(&config.output_dir).join("gap_spectrum.csv");
     let mut wtr = Writer::from_path(path)?;
 
-    let expected_rate = 1.0 / (max_n as f64).ln();
+    // Updated Heuristic: 2.0 / ln(N) because we scan only odd numbers
+    // This provides a more accurate baseline for prime density in this context.
+    let expected_rate = 2.0 / (max_n as f64).ln();
 
     let sorted_gaps: BTreeMap<_, _> = stats.gap_spectrum.iter().collect();
 
@@ -184,13 +206,15 @@ fn write_oscillation_series(stats: &Statistics, config: &Config) -> Result<(), B
     // Dynamically write data rows
     for bin in &stats.bins {
         // Only write bins that contain actual prime data (prime_count_p > 0)
-        // This prevents long stretches of zero data at the end of the graph
-        // for smaller max_exponent values, improving graph readability.
         if bin.prime_count_p == 0 {
             continue;
         }
 
-        let ratio_s_p = bin.prime_count_s as f64 / bin.prime_count_p as f64;
+        let ratio_s_p = if bin.prime_count_p > 0 {
+            bin.prime_count_s as f64 / bin.prime_count_p as f64
+        } else {
+            0.0
+        };
 
         let mut record: Vec<String> = vec![
             bin.bin_start.to_string(),
@@ -221,62 +245,48 @@ mod tests {
     use super::*;
 
     #[test]
-
     fn test_shielding_logic() {
-        // Test Gap 2: Shielded by 3 (Selection Bias)
-
+        // Gap 2
+        // Factors(2) -> 2 (Filtered)
+        // Factors(1) -> []
+        // Factors(3) -> 3
+        // Result: 3. Boost 1.5.
         let info_2 = calculate_shielding_info(2);
-
         assert_eq!(info_2.shield_score, 1);
-
         assert_eq!(info_2.shield_primes, "3");
-
         assert_eq!(info_2.theoretical_boost, 1.5);
 
-        // Test Gap 4: Shielded by 3 (Nat) and 5 (Sel)
-
+        // Gap 4
+        // Factors(4) -> 2 (Filtered)
+        // Factors(3) -> 3
+        // Factors(5) -> 5
+        // Result: 3, 5. Boost 1.5 * 1.25
         let info_4 = calculate_shielding_info(4);
-
         assert_eq!(info_4.shield_score, 2);
-
         assert_eq!(info_4.shield_primes, "3,5");
-
         assert_eq!(info_4.theoretical_boost, 1.5 * 1.25);
 
-        // Test Gap 6: Shielded by 5 (Nat) and 7 (Sel: 6 = -1 mod 7)
-
+        // Gap 6
+        // Factors(6) -> 2, 3 (Wheel - IGNORED)
+        // Factors(5) -> 5
+        // Factors(7) -> 7
+        // Result: 5, 7. Boost 1.25 * 1.166 * 0.75 (Mod 3 Penalty)
         let info_6 = calculate_shielding_info(6);
-
         assert_eq!(info_6.shield_score, 2);
-
         assert_eq!(info_6.shield_primes, "5,7");
+        assert_eq!(info_6.theoretical_boost, 1.25 * (7.0 / 6.0) * 0.75);
 
-        assert_eq!(info_6.theoretical_boost, 1.25 * (7.0 / 6.0));
-
-        // Test Gap 34: Shielded by 3, 5, 7, 11
-
-        let info_34 = calculate_shielding_info(34);
-
-        assert_eq!(info_34.shield_score, 4);
-
-        assert_eq!(info_34.shield_primes, "3,5,7,11");
-
+        // Gap 30
+        // Factors(30) -> 2, 3, 5 (Wheel - IGNORED)
+        // Factors(29) -> 29
+        // Factors(31) -> 31
+        // Result: 29, 31. Boost * 0.75 (Mod 3 Penalty)
+        let info_30 = calculate_shielding_info(30);
+        assert_eq!(info_30.shield_primes, "29,31");
+        assert_eq!(info_30.shield_score, 2);
         assert_eq!(
-            info_34.theoretical_boost,
-            (3.0 / 2.0) * (5.0 / 4.0) * (7.0 / 6.0) * (11.0 / 10.0)
-        );
-
-        // Test Gap 56: Shielded by 3, 5, 11, 19
-
-        let info_56 = calculate_shielding_info(56);
-
-        assert_eq!(info_56.shield_score, 4);
-
-        assert_eq!(info_56.shield_primes, "3,5,11,19");
-
-        assert_eq!(
-            info_56.theoretical_boost,
-            (3.0 / 2.0) * (5.0 / 4.0) * (11.0 / 10.0) * (19.0 / 18.0)
+            info_30.theoretical_boost,
+            (29.0 / 28.0) * (31.0 / 30.0) * 0.75
         );
     }
 }
