@@ -78,6 +78,32 @@
         .btn:hover:not(.active) {
             background-color: #e9ecef;
         }
+        .legend-container {
+            display: flex;
+            justify_content: center;
+            gap: 15px;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            border-radius: 3px;
+        }
+        .search-container {
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        .search-input {
+            padding: 5px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -89,17 +115,30 @@
         </div>
 
         <div class="chart-container">
-            <h2>Theory Verification <span class="info-tooltip">ⓘ<span class="tooltip-text">This chart plots the theoretical model (our 'boost' score) against the observed success rate to verify our hypothesis. The trendline is an ordinary least squares regression (best fit) line; points on this line behave exactly as predicted by the aggregate model.</span></span></h2>
+            <h2>Theory Verification <span class="info-tooltip">ⓘ<span class="tooltip-text">This chart plots the theoretical model (our 'boost' score) against the observed success rate.</span></span></h2>
+            <div class="search-container">
+                <input type="number" id="scatterSearch" class="search-input" placeholder="Find Gap Size (e.g. 56)">
+                <button class="btn" onclick="searchScatterPoint()">Find</button>
+            </div>
             <canvas id="verificationChart"></canvas>
         </div>
 
         <div class="chart-container">
-            <h2>$S = p_n + p_{n+1} - 1$ Primality Ratio Oscillation <span class="info-tooltip">ⓘ<span class="tooltip-text">Shows how the success rate changes across the number line, revealing density oscillations.</span></span></h2>
+            <h2>$S = p_n + p_{n+1} - 1$ Primality Ratio Oscillation <span class="info-tooltip">ⓘ<span class="tooltip-text">Shows how the success rate changes across the number line.</span></span></h2>
             <canvas id="oscillationChart"></canvas>
         </div>
 
         <div class="chart-container">
             <h2>Gap Success Rate Spectrum <span class="info-tooltip">ⓘ<span class="tooltip-text">Visualize the success rate for each prime gap size.</span></span></h2>
+
+            <div class="legend-container">
+                <div class="legend-item"><div class="legend-color" style="background-color: rgba(201, 203, 207, 1)"></div>Score 0 (None)</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: rgba(255, 205, 86, 1)"></div>Score 1</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: rgba(255, 159, 64, 1)"></div>Score 2</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: rgba(54, 162, 235, 1)"></div>Score 3</div>
+                <div class="legend-item"><div class="legend-color" style="background-color: rgba(75, 192, 192, 1)"></div>Score 4+ (King)</div>
+            </div>
+
             <div class="btn-group">
                 <button class="btn active" onclick="toggleGapChart('bar')">Bar View</button>
                 <button class="btn" onclick="toggleGapChart('polar')">Polar View (Shield Star)</button>
@@ -110,6 +149,9 @@
     </div>
 
     <script>
+        // Global charts
+        let verifyChart;
+
         // Toggle function needs to be global
         window.toggleGapChart = function(viewType) {
             const barCanvas = document.getElementById('gapChart');
@@ -127,6 +169,38 @@
                 buttons[0].classList.remove('active');
                 buttons[1].classList.add('active');
             }
+        };
+
+        window.searchScatterPoint = function() {
+            const gapToFind = parseInt(document.getElementById('scatterSearch').value);
+            if (!gapToFind || !verifyChart) return;
+
+            const datasets = verifyChart.data.datasets;
+            // Reset colors
+            // Note: We need to know original colors. For simplicity, we will just iterate
+            // and set the found one to bright RED and others to transparent grey.
+
+            // Actually, let's loop through all points in all datasets
+            datasets.forEach(dataset => {
+                // We need to switch to a per-point background color array if it's not one already
+                const originalColor = dataset.backgroundColor;
+
+                const newColors = dataset.data.map(point => {
+                    if (point.gap === gapToFind) {
+                        return 'rgba(255, 0, 0, 1)'; // Highlight RED
+                    } else {
+                        return 'rgba(200, 200, 200, 0.2)'; // Fade out others
+                    }
+                });
+
+                // If we found the gap in this dataset, update colors.
+                // But wait, standard scatter points might be shared.
+                // Let's just update ALL datasets to highlight the gap.
+                dataset.backgroundColor = newColors;
+                dataset.pointRadius = dataset.data.map(point => point.gap === gapToFind ? 10 : 4);
+            });
+
+            verifyChart.update();
         };
 
         async function loadDataAndRenderCharts() {
@@ -179,27 +253,23 @@
             const regression = calculateLinearRegression(verificationData);
             const trendlineData = verificationData.map(p => ({ x: p.x, y: regression.m * p.x + regression.b }));
 
-            new Chart(document.getElementById('verificationChart'), {
+            // We need to flatten the datasets logic for the search to work easily
+            // Or we can keep the "datasets" structure but be careful.
+            // Let's use a single dataset for points to make search coloring easier.
+
+            verifyChart = new Chart(document.getElementById('verificationChart'), {
                 type: 'scatter',
                 data: {
                     datasets: [
                         {
-                            label: 'Gap 4 (Red)',
-                            data: verificationData.filter(p => p.gap === 4),
-                            backgroundColor: 'rgba(255, 99, 132, 1)', // Red for Gap 4
-                            pointRadius: 7,
-                        },
-                        {
-                            label: 'Gap 34 (Blue)',
-                            data: verificationData.filter(p => p.gap === 34),
-                            backgroundColor: 'rgba(54, 162, 235, 1)', // Blue for Gap 34
-                            pointRadius: 7,
-                        },
-                        {
-                            label: 'Other Gaps (Grey)',
-                            data: verificationData.filter(p => p.gap !== 4 && p.gap !== 34),
-                            backgroundColor: 'rgba(0, 0, 0, 0.3)', // Default
-                            pointRadius: 4,
+                            label: 'Gaps',
+                            data: verificationData,
+                            backgroundColor: verificationData.map(d => {
+                                if (d.gap === 4) return 'rgba(255, 99, 132, 1)';
+                                if (d.gap === 34) return 'rgba(54, 162, 235, 1)';
+                                return 'rgba(0, 0, 0, 0.5)';
+                            }),
+                            pointRadius: verificationData.map(d => (d.gap === 4 || d.gap === 34) ? 7 : 5),
                         },
                         {
                             label: 'Trendline',
@@ -208,7 +278,8 @@
                             borderColor: 'rgba(75, 192, 192, 1)',
                             borderWidth: 2,
                             pointRadius: 0,
-                            tension: 0.1
+                            tension: 0.1,
+                            tooltip: { enabled: false } // Disable tooltip for trendline
                         }
                     ]
                 },
@@ -218,6 +289,7 @@
                             callbacks: {
                                 label: function(context) {
                                     const d = context.raw;
+                                    if (!d.gap) return ''; // Trendline
                                     return `Gap: ${d.gap} | Boost: ${d.x.toFixed(2)} | Rate: ${d.y.toFixed(3)} | Score: ${d.score} | Primes: ${d.primes || 'none'}`;
                                 }
                             }
@@ -272,59 +344,77 @@
                 }
             });
 
-            // --- Gap Spectrum Chart (Bar) ---
-            const gapDataLimited = gapData.filter(d => d.gap_size <= 60);
+                        // --- Gap Spectrum Chart (Bar) ---
+                        const gapDataLimited = gapData.filter(d => d.gap_size <= 60);
 
-            new Chart(document.getElementById('gapChart'), {
-                type: 'bar',
-                data: {
-                    labels: gapDataLimited.map(d => d.gap_size),
-                    datasets: [{
-                        label: 'Success Rate',
-                        data: gapDataLimited.map(d => d.success_rate),
-                        backgroundColor: 'rgba(153, 102, 255, 0.6)'
-                    }]
-                },
-                options: { scales: { y: { beginAtZero: true, title: { display: true, text: 'Success Rate' } }, x: { title: { display: true, text: 'Gap Size' } } } }
-            });
+                        // Color mapping based on Shield Score
+                        const barColors = gapDataLimited.map(d => {
+                            switch(d.shield_score) {
+                                case 0: return 'rgba(201, 203, 207, 0.6)'; // Grey
+                                case 1: return 'rgba(255, 205, 86, 0.6)'; // Yellow
+                                case 2: return 'rgba(255, 159, 64, 0.6)'; // Orange
+                                case 3: return 'rgba(54, 162, 235, 0.6)'; // Blue
+                                default: return 'rgba(75, 192, 192, 0.6)'; // Green for 4+
+                            }
+                        });
 
-            // --- Gap Spectrum Chart (Polar) ---
-            // Color mapping based on Shield Score
-            const polarColors = gapDataLimited.map(d => {
-                switch(d.shield_score) {
-                    case 0: return 'rgba(201, 203, 207, 0.6)'; // Grey
-                    case 1: return 'rgba(255, 205, 86, 0.6)'; // Yellow
-                    case 2: return 'rgba(255, 159, 64, 0.6)'; // Orange
-                    case 3: return 'rgba(54, 162, 235, 0.6)'; // Blue
-                    default: return 'rgba(54, 162, 235, 0.6)'; // Blue for >3
-                }
-            });
-
-            new Chart(document.getElementById('gapPolarChart'), {
-                type: 'polarArea',
-                data: {
-                    labels: gapDataLimited.map(d => `Gap ${d.gap_size} (Score: ${d.shield_score})`),
-                    datasets: [{
-                        label: 'Success Rate',
-                        data: gapDataLimited.map(d => d.success_rate),
-                        backgroundColor: polarColors
-                    }]
-                },
-                options: {
-                    plugins: {
-                        legend: { position: 'right' },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const d = gapDataLimited[context.dataIndex];
-                                    return `Rate: ${d.success_rate.toFixed(3)} | Shield Score: ${d.shield_score}`;
+                        new Chart(document.getElementById('gapChart'), {
+                            type: 'bar',
+                            data: {
+                                labels: gapDataLimited.map(d => d.gap_size),
+                                datasets: [{
+                                    label: 'Success Rate',
+                                    data: gapDataLimited.map(d => d.success_rate),
+                                    backgroundColor: barColors,
+                                    borderColor: barColors.map(c => c.replace('0.6', '1')), // Solid border
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: {
+                                scales: {
+                                    y: { beginAtZero: true, title: { display: true, text: 'Success Rate' } },
+                                    x: { title: { display: true, text: 'Gap Size' } }
+                                },
+                                plugins: {
+                                    legend: { display: false }, // Hide legend as colors explain themselves via tooltip/context
+                                    tooltip: {
+                                        callbacks: {
+                                            afterLabel: function(context) {
+                                                const d = gapDataLimited[context.dataIndex];
+                                                return `Shield Score: ${d.shield_score}`;
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
-                }
-            });
-        }
+                        });
+
+                        // --- Gap Spectrum Chart (Polar) ---
+                        // Reuse colors for Polar Chart
+                        new Chart(document.getElementById('gapPolarChart'), {
+                            type: 'polarArea',
+                            data: {
+                                labels: gapDataLimited.map(d => `Gap ${d.gap_size} (Score: ${d.shield_score})`),
+                                datasets: [{
+                                    label: 'Success Rate',
+                                    data: gapDataLimited.map(d => d.success_rate),
+                                    backgroundColor: barColors // Reuse the same color array
+                                }]
+                            },
+                            options: {
+                                plugins: {
+                                    legend: { position: 'right' },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function(context) {
+                                                const d = gapDataLimited[context.dataIndex];
+                                                return `Rate: ${d.success_rate.toFixed(3)} | Shield Score: ${d.shield_score}`;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });        }
         loadDataAndRenderCharts();
     </script>
 </body>
