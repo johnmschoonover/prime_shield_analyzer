@@ -91,11 +91,11 @@ fn calculate_shielding_info(g: u64) -> ShieldingInfo {
     for &q in SMALL_PRIMES.iter().skip(1) {
         // Skip 3 as it's already handled
         let q_u64 = q as u64;
-        // CORRECTION: A gap is shielded if g = 1 mod q.
-        // Proof: S = 2p + g - 1. If g = 1 mod q, then g - 1 = k*q.
-        // S = 2p + k*q = 2p (mod q). Since p is prime > q, 2p != 0 (mod q).
-        // Thus S is never divisible by q.
-        if g % q_u64 == 1 {
+        // Shield Condition: g = 1 mod q OR g = -1 mod q.
+        // Natural Shield: g = 1 mod q => S = 2p mod q (Never 0).
+        // Selection Shield: g = -1 mod q => S = 2(p-1) mod q. Fails if p=1.
+        // But if p=1, p+g = 0 mod q (Composite). So valid pairs never fail.
+        if g % q_u64 == 1 || g % q_u64 == q_u64 - 1 {
             shield_score += 1;
             shield_primes_vec.push(q);
             theoretical_boost *= q_u64 as f64 / (q_u64 - 1) as f64;
@@ -221,38 +221,62 @@ mod tests {
     use super::*;
 
     #[test]
+
     fn test_shielding_logic() {
         // Test Gap 2: Shielded by 3 (Selection Bias)
+
         let info_2 = calculate_shielding_info(2);
+
         assert_eq!(info_2.shield_score, 1);
+
         assert_eq!(info_2.shield_primes, "3");
+
         assert_eq!(info_2.theoretical_boost, 1.5);
 
-        // Test Gap 4: Shielded by 3 only (4 % 5 = 4 != 1)
+        // Test Gap 4: Shielded by 3 (Nat) and 5 (Sel)
+
         let info_4 = calculate_shielding_info(4);
-        assert_eq!(info_4.shield_score, 1);
-        assert_eq!(info_4.shield_primes, "3");
-        assert_eq!(info_4.theoretical_boost, 1.5);
 
-        // Test Gap 6: Shielded by 5 (6 % 5 = 1)
+        assert_eq!(info_4.shield_score, 2);
+
+        assert_eq!(info_4.shield_primes, "3,5");
+
+        assert_eq!(info_4.theoretical_boost, 1.5 * 1.25);
+
+        // Test Gap 6: Shielded by 5 (Nat) and 7 (Sel: 6 = -1 mod 7)
+
         let info_6 = calculate_shielding_info(6);
-        assert_eq!(info_6.shield_score, 1);
-        assert_eq!(info_6.shield_primes, "5");
-        assert_eq!(info_6.theoretical_boost, 1.25);
 
-        // Test Gap 34: Shielded by 3 and 11
+        assert_eq!(info_6.shield_score, 2);
+
+        assert_eq!(info_6.shield_primes, "5,7");
+
+        assert_eq!(info_6.theoretical_boost, 1.25 * (7.0 / 6.0));
+
+        // Test Gap 34: Shielded by 3, 5, 7, 11
+
         let info_34 = calculate_shielding_info(34);
-        assert_eq!(info_34.shield_score, 2);
-        assert_eq!(info_34.shield_primes, "3,11");
-        assert_eq!(info_34.theoretical_boost, (3.0 / 2.0) * (11.0 / 10.0));
 
-        // Test Gap 56: Shielded by 3, 5, 11
+        assert_eq!(info_34.shield_score, 4);
+
+        assert_eq!(info_34.shield_primes, "3,5,7,11");
+
+        assert_eq!(
+            info_34.theoretical_boost,
+            (3.0 / 2.0) * (5.0 / 4.0) * (7.0 / 6.0) * (11.0 / 10.0)
+        );
+
+        // Test Gap 56: Shielded by 3, 5, 11, 19
+
         let info_56 = calculate_shielding_info(56);
-        assert_eq!(info_56.shield_score, 3);
-        assert_eq!(info_56.shield_primes, "3,5,11");
+
+        assert_eq!(info_56.shield_score, 4);
+
+        assert_eq!(info_56.shield_primes, "3,5,11,19");
+
         assert_eq!(
             info_56.theoretical_boost,
-            (3.0 / 2.0) * (5.0 / 4.0) * (11.0 / 10.0)
+            (3.0 / 2.0) * (5.0 / 4.0) * (11.0 / 10.0) * (19.0 / 18.0)
         );
     }
 }

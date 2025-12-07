@@ -45,10 +45,11 @@ def validate_general(g_k, primes_list, target_mod, target_rem):
                 return False
 
         # General Case: Primes >= 5
-        # The gap must be 1 mod p to shield against p.
+        # The gap must be 1 or -1 mod p to shield against p.
         elif p >= 5:
-            if g_k % p != 1:
-                logging.error(f"Subsequent shield check failed for {g_k} with prime {p}. Expected rem 1, got {g_k % p}.")
+            rem = g_k % p
+            if rem != 1 and rem != p - 1:
+                logging.error(f"Subsequent shield check failed for {g_k} with prime {p}. Expected rem 1 or {p-1}, got {rem}.")
                 return False
 
     return True
@@ -110,10 +111,6 @@ def generate_shield_generals(n_terms: int) -> List[int]:
         # Identify the NEW prime we need to shield against (p_{k+1}).
         p_new = nextprime(p_k)
 
-        # The target remainder for this new prime is 1.
-        # We want g = 1 mod p_new.
-        r_new = 1
-
         # Search for the smallest k such that:
         # candidate = current_general + k * current_cycle
         # satisfies the condition for p_new.
@@ -124,7 +121,9 @@ def generate_shield_generals(n_terms: int) -> List[int]:
             candidate = current_general + (k * current_cycle)
 
             # Check 1: Does this candidate satisfy the new prime's constraint?
-            hit = (candidate % p_new == r_new)
+            # We accept Natural Shields (1) and Selection Shields (-1).
+            rem = candidate % p_new
+            hit = (rem == 1 or rem == p_new - 1)
 
             # Check 2: Does it maintain the required parity (even)?
             # (Note: With the current setup starting at 4 and cycle including odd primes,
@@ -153,15 +152,13 @@ def generate_shield_generals(n_terms: int) -> List[int]:
         results.append(current_general)
 
         # --- Update State for Next Iteration ---
-        # Multiply the cycle by the new prime. This ensures that future search steps
-        # will preserve the congruence for p_new (and all previous primes).
+        # Multiply the cycle by the new prime.
         current_cycle *= p_new
 
         # Update the highest shielded prime marker.
         p_k = p_new
 
     return results
-
 if __name__ == "__main__":
     # Set up command line argument parsing
     parser = argparse.ArgumentParser(
