@@ -257,9 +257,37 @@ impl PrimalityChecker {
             sqrt_limit,
             base_primes,
             known_primes_under_sqrt: base_sieve,
-            cached_segments: VecDeque::with_capacity(4),
-            cache_size: 4,
+            cached_segments: VecDeque::with_capacity(8),
+            cache_size: 8,
             segment_size_bits: (segment_size_bytes * 8) as u64,
+        }
+    }
+
+    pub fn ensure_range(&mut self, start: u64, end: u64) {
+        if start > self.limit {
+            return;
+        }
+        let effective_start = std::cmp::max(start, self.sqrt_limit + 1);
+        if effective_start > end {
+            return;
+        }
+
+        let start_seg = (effective_start / self.segment_size_bits) * self.segment_size_bits;
+        let end_seg = (end / self.segment_size_bits) * self.segment_size_bits;
+
+        let mut seg = start_seg;
+        while seg <= end_seg {
+            // Check if seg in cache
+            if !self.cached_segments.iter().any(|(s, _)| *s == seg) {
+                let segment_end = seg + self.segment_size_bits;
+                let new_segment = PrimeIterator::sieve_segment(seg, segment_end, &self.base_primes);
+
+                if self.cached_segments.len() >= self.cache_size {
+                    self.cached_segments.pop_front();
+                }
+                self.cached_segments.push_back((seg, new_segment));
+            }
+            seg += self.segment_size_bits;
         }
     }
 

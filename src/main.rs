@@ -103,55 +103,110 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut gap_counts = vec![0u64; MAX_FAST_GAP];
     let mut gap_successes = vec![0u64; MAX_FAST_GAP];
 
+    // --- Batching for Sieve Pre-computation ---
+    const BATCH_SIZE: usize = 262_144;
+    let mut batch = Vec::with_capacity(BATCH_SIZE);
+
     for p_current in prime_iterator {
-        stats.total_primes += 1;
+        batch.push(p_current);
 
-        // Hot Path: Bin Index Calculation
-        if let Some(bin_index) = stats.get_bin_index(p_current) {
-            stats.bins[bin_index].prime_count_p += 1;
+        if batch.len() >= BATCH_SIZE {
+            // Pre-compute Sieve for this batch
+            let min_s = p_prev * 2; // Approx lower bound for S (p_prev + p_current - 1)
+            let max_s = batch.last().unwrap() * 2 + 2000; // Upper bound with safety margin
+            primality_checker.ensure_range(min_s, max_s);
 
-            let gap = p_current - p_prev;
-            let s = p_current + p_prev - 1;
+            // Process Batch Sequentially
+            for &p_curr in &batch {
+                stats.total_primes += 1;
 
-            // 1. Record Gap Occurrence
-            if (gap as usize) < MAX_FAST_GAP {
-                gap_counts[gap as usize] += 1;
-            } else {
-                stats.gap_spectrum.entry(gap).or_insert((0, 0)).0 += 1;
+                if let Some(bin_index) = stats.get_bin_index(p_curr) {
+                    stats.bins[bin_index].prime_count_p += 1;
+
+                    let gap = p_curr - p_prev;
+                    let s = p_curr + p_prev - 1;
+
+                    if (gap as usize) < MAX_FAST_GAP {
+                        gap_counts[gap as usize] += 1;
+                    } else {
+                        stats.gap_spectrum.entry(gap).or_insert((0, 0)).0 += 1;
+                    }
+
+                    if is_target_gap(gap) {
+                        *stats.bins[bin_index]
+                            .gap_occurrences
+                            .entry(gap)
+                            .or_insert(0) += 1;
+                    }
+
+                    if primality_checker.is_prime(s) {
+                        stats.total_s_primes += 1;
+                        stats.bins[bin_index].prime_count_s += 1;
+
+                        if (gap as usize) < MAX_FAST_GAP {
+                            gap_successes[gap as usize] += 1;
+                        } else {
+                            stats.gap_spectrum.entry(gap).or_insert((0, 0)).1 += 1;
+                        }
+
+                        if is_target_gap(gap) {
+                            *stats.bins[bin_index].gap_successes.entry(gap).or_insert(0) += 1;
+                        }
+                    }
+                }
+                p_prev = p_curr;
             }
 
-            // High-interest gap tracking (Bin specific)
-            if is_target_gap(gap) {
-                *stats.bins[bin_index]
-                    .gap_occurrences
-                    .entry(gap)
-                    .or_insert(0) += 1;
-            }
+            // Throttled UI
+            bar.inc(batch.len() as u64);
+            batch.clear();
+        }
+    }
 
-            // 2. Check S
-            if primality_checker.is_prime(s) {
-                stats.total_s_primes += 1;
-                stats.bins[bin_index].prime_count_s += 1;
+    // Process remaining batch
+    if !batch.is_empty() {
+        let min_s = p_prev * 2;
+        let max_s = batch.last().unwrap() * 2 + 2000;
+        primality_checker.ensure_range(min_s, max_s);
+
+        for &p_curr in &batch {
+            stats.total_primes += 1;
+            if let Some(bin_index) = stats.get_bin_index(p_curr) {
+                stats.bins[bin_index].prime_count_p += 1;
+                let gap = p_curr - p_prev;
+                let s = p_curr + p_prev - 1;
 
                 if (gap as usize) < MAX_FAST_GAP {
-                    gap_successes[gap as usize] += 1;
+                    gap_counts[gap as usize] += 1;
                 } else {
-                    stats.gap_spectrum.entry(gap).or_insert((0, 0)).1 += 1;
+                    stats.gap_spectrum.entry(gap).or_insert((0, 0)).0 += 1;
                 }
 
                 if is_target_gap(gap) {
-                    *stats.bins[bin_index].gap_successes.entry(gap).or_insert(0) += 1;
+                    *stats.bins[bin_index]
+                        .gap_occurrences
+                        .entry(gap)
+                        .or_insert(0) += 1;
+                }
+
+                if primality_checker.is_prime(s) {
+                    stats.total_s_primes += 1;
+                    stats.bins[bin_index].prime_count_s += 1;
+
+                    if (gap as usize) < MAX_FAST_GAP {
+                        gap_successes[gap as usize] += 1;
+                    } else {
+                        stats.gap_spectrum.entry(gap).or_insert((0, 0)).1 += 1;
+                    }
+
+                    if is_target_gap(gap) {
+                        *stats.bins[bin_index].gap_successes.entry(gap).or_insert(0) += 1;
+                    }
                 }
             }
+            p_prev = p_curr;
         }
-
-        p_prev = p_current;
-
-        // --- Optimization 3: Throttled UI Updates ---
-        // Only update progress bar every ~250k primes.
-        if (stats.total_primes & 0x3FFFF) == 0 {
-            bar.set_position(p_current);
-        }
+        bar.inc(batch.len() as u64);
     }
 
     bar.finish_with_message("Analysis complete.");
