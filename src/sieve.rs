@@ -66,16 +66,32 @@ impl PrimeIterator {
             len_u64.max(1)
         };
 
+        // Optimization: Pre-mark even numbers.
+        // If start is even: bit 0 is even (composite). Pattern 1010... (0x55...)
+        // If start is odd: bit 0 is odd (prime?). Pattern 0101... (0xAA...)
+        let pattern = if start.is_multiple_of(2) {
+            0x5555555555555555
+        } else {
+            0xAAAAAAAAAAAAAAAA
+        };
+
         raw_slice
             .par_chunks_mut(chunk_size)
             .enumerate()
             .for_each(|(chunk_idx, chunk)| {
+                // Initialize chunk with even/odd pattern. Replaces loop for p=2.
+                chunk.fill(pattern);
+
                 // Determine the range of global bits this chunk covers
                 let chunk_start_word_idx = chunk_idx * chunk_size;
                 let chunk_start_bit = start + (chunk_start_word_idx as u64 * 64);
                 let chunk_len_bits = chunk.len() as u64 * 64;
 
                 for &p_u32 in base_primes {
+                    if p_u32 == 2 {
+                        continue;
+                    } // Handled by pattern fill
+
                     let p = p_u32 as u64;
                     let p_sq = p * p;
 
@@ -110,10 +126,13 @@ impl PrimeIterator {
 
         if start == 0 {
             if !segment.is_empty() {
-                segment.set(0, true);
+                segment.set(0, true); // 0 is not prime
             }
             if segment.len() > 1 {
-                segment.set(1, true);
+                segment.set(1, true); // 1 is not prime
+            }
+            if segment.len() > 2 {
+                segment.set(2, false); // 2 IS prime (was marked by pattern)
             }
         }
 
@@ -153,17 +172,43 @@ impl Iterator for PrimeIterator {
                     segment,
                     segment_index,
                 } => {
-                    while *segment_index < segment.len() {
-                        if !segment[*segment_index] {
-                            let prime = *segment_start + *segment_index as u64;
-                            *segment_index += 1;
+                    let raw = segment.as_raw_slice();
+                    let start_idx = *segment_index;
+                    let start_word = start_idx / 64;
+                    let start_bit = start_idx % 64;
+
+                    #[allow(clippy::needless_range_loop)]
+                    for word_idx in start_word..raw.len() {
+                        let mut word = raw[word_idx];
+
+                        // If this is the first word, mask out bits we've already processed
+                        if word_idx == start_word {
+                            // Set bits 0..start_bit to 1 (treat as composite/processed)
+                            // so trailing_ones() skips them.
+                            if start_bit < 64 {
+                                let mask = (1u64 << start_bit) - 1;
+                                word |= mask;
+                            } else {
+                                word = u64::MAX;
+                            }
+                        }
+
+                        // If word is not all ones, there is a zero (prime)
+                        if word != u64::MAX {
+                            let bit_idx = word.trailing_ones() as usize;
+                            let found_index = word_idx * 64 + bit_idx;
+
+                            *segment_index = found_index + 1;
+                            let prime = *segment_start + found_index as u64;
                             if prime > self.limit {
                                 return None;
                             }
                             return Some(prime);
                         }
-                        *segment_index += 1;
                     }
+
+                    // Segment exhausted
+                    *segment_index = segment.len();
 
                     *segment_start += self.segment_size_bits;
                     if *segment_start > self.limit {
