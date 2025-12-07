@@ -1,7 +1,6 @@
 use bitvec::prelude::*;
 use rayon::prelude::*;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// An iterator that generates primes up to a given limit using a segmented sieve.
 pub struct PrimeIterator {
@@ -51,32 +50,52 @@ impl PrimeIterator {
     fn sieve_segment(start: u64, end: u64, base_primes: &[u32]) -> BitVec<u64, Lsb0> {
         let mut segment = bitvec![u64, Lsb0; 0; (end - start) as usize]; // 0 means prime
 
-        // Unsafe cast to atomic slice. This is safe because u64 and AtomicU64 have the
-        // same memory representation, and we are only performing atomic operations.
-        let atomic_segment: &[AtomicU64] = unsafe {
-            std::slice::from_raw_parts(
-                segment.as_raw_slice().as_ptr() as *const AtomicU64,
-                segment.as_raw_slice().len(),
-            )
-        };
+        // Parallelize over memory chunks (Domain Decomposition) to avoid false sharing.
+        // We process the raw u64 slice in parallel chunks.
+        let raw_slice = segment.as_raw_mut_slice();
+        const CHUNK_SIZE: usize = 4096; // 4096 u64s = 32KB
 
-        // Parallelize the marking of composites
-        base_primes.par_iter().for_each(|&p_u32| {
-            let p = p_u32 as u64;
-            let mut mark_start = start.div_ceil(p) * p;
-            if p * p > start {
-                mark_start = p * p;
-            }
+        raw_slice
+            .par_chunks_mut(CHUNK_SIZE)
+            .enumerate()
+            .for_each(|(chunk_idx, chunk)| {
+                // Determine the range of global bits this chunk covers
+                let chunk_start_word_idx = chunk_idx * CHUNK_SIZE;
+                let chunk_start_bit = start + (chunk_start_word_idx as u64 * 64);
+                let chunk_len_bits = chunk.len() as u64 * 64;
 
-            for i in (mark_start..end).step_by(p as usize) {
-                let idx = (i - start) as usize;
-                let word_idx = idx / 64;
-                let bit_in_word = idx % 64;
-                if word_idx < atomic_segment.len() {
-                    atomic_segment[word_idx].fetch_or(1 << bit_in_word, Ordering::Relaxed);
+                for &p_u32 in base_primes {
+                    let p = p_u32 as u64;
+                    let p_sq = p * p;
+
+                    // Calculate the bit offset within the chunk for the first multiple of p
+                    let start_bit_in_chunk = if chunk_start_bit < p_sq {
+                        // The first multiple we care about is p*p.
+                        // Calculate offset of p*p relative to chunk_start_bit.
+                        p_sq.saturating_sub(chunk_start_bit)
+                    } else {
+                        // chunk_start_bit >= p*p.
+                        // Find the smallest k >= 0 such that (chunk_start_bit + k) is a multiple of p.
+                        let rem = chunk_start_bit % p;
+                        if rem == 0 {
+                            0
+                        } else {
+                            p - rem
+                        }
+                    };
+
+                    // Mark composites in this chunk
+                    let mut local_bit_idx = start_bit_in_chunk;
+                    while local_bit_idx < chunk_len_bits {
+                        let word_idx = (local_bit_idx / 64) as usize;
+                        let bit_idx = (local_bit_idx % 64) as usize;
+
+                        chunk[word_idx] |= 1 << bit_idx;
+
+                        local_bit_idx += p;
+                    }
                 }
-            }
-        });
+            });
 
         if start == 0 {
             if !segment.is_empty() {
