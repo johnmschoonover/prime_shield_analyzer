@@ -38,16 +38,14 @@ def validate_general(g_k, primes_list, target_mod, target_rem):
     # 2. Check Shield Conditions for each prime in the list
     for p in primes_list:
         # Special Case: Prime 3
-        # The gap must be 1 mod 3 to avoid the sum being divisible by 3.
+        # The gap must be non-zero mod 3 to avoid the sum being divisible by 3.
         if p == 3:
-            if g_k % 3 != 1:
-                logging.error(f"Initial shield check failed for {g_k}. Expected rem 1 for mod 3, got {g_k % 3}.")
+            if g_k % 3 == 0:
+                logging.error(f"Initial shield check failed for {g_k}. Expected non-zero rem for mod 3, got 0.")
                 return False
 
         # General Case: Primes >= 5
         # The gap must be 1 mod p to shield against p.
-        # Proof: S = 2p + g - 1. If g = 1 mod p, then g-1 is a multiple of p.
-        # S = 2p + k*p = 2p (mod p). Since p > q, 2p != 0. Thus S is never 0 mod p.
         elif p >= 5:
             if g_k % p != 1:
                 logging.error(f"Subsequent shield check failed for {g_k} with prime {p}. Expected rem 1, got {g_k % p}.")
