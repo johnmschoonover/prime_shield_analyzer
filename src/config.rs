@@ -21,7 +21,7 @@ pub struct Config {
     pub segment_size_kb: usize,
 
     /// A comma-separated list of prime gap sizes to track (e.g., "2,4,6,12"). All gaps must be even and > 0.
-    #[arg(long, default_value = "2,4,6,12,30", value_delimiter = ',')]
+    #[arg(long, default_value = "2,4,6,12,30,34", value_delimiter = ',')]
     pub gaps: Vec<u64>,
 
     /// Generate a self-contained HTML report with interactive charts.
