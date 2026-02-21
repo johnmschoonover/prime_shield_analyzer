@@ -78,4 +78,31 @@ impl Statistics {
             Some(self.bins.len() - 1)
         }
     }
+
+    pub fn merge(&mut self, other: &Statistics) {
+        self.total_primes += other.total_primes;
+        self.total_s_primes += other.total_s_primes;
+
+        // Merge gap_spectrum
+        for (gap, (occ, succ)) in &other.gap_spectrum {
+            let entry = self.gap_spectrum.entry(*gap).or_insert((0, 0));
+            entry.0 += occ;
+            entry.1 += succ;
+        }
+
+        // Merge bins
+        for (i, bin) in other.bins.iter().enumerate() {
+            if i < self.bins.len() {
+                self.bins[i].prime_count_p += bin.prime_count_p;
+                self.bins[i].prime_count_s += bin.prime_count_s;
+
+                for (gap, occ) in &bin.gap_occurrences {
+                    *self.bins[i].gap_occurrences.entry(*gap).or_insert(0) += occ;
+                }
+                for (gap, succ) in &bin.gap_successes {
+                    *self.bins[i].gap_successes.entry(*gap).or_insert(0) += succ;
+                }
+            }
+        }
+    }
 }
