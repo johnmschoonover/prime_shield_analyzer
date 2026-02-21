@@ -25,6 +25,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Error: No gap sizes provided. Please provide at least one gap size.");
         std::process::exit(1);
     }
+    if config.batch_size == 0 {
+        eprintln!("Error: --batch-size must be greater than 0.");
+        std::process::exit(1);
+    }
     for &gap in &config.gaps {
         if gap == 0 {
             eprintln!("Error: Gap size cannot be 0.");
@@ -90,6 +94,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.sieve_chunk_multiplier
     );
     println!("Tracking Gaps: {:?}", sorted_target_gaps);
+    println!(
+        "Batch precompute (ensure_range): {}",
+        if config.disable_precompute {
+            "disabled"
+        } else {
+            "enabled"
+        }
+    );
+    println!(
+        "Batch size: {} | Progress bar: {}",
+        config.batch_size,
+        if config.no_progress {
+            "disabled"
+        } else {
+            "enabled"
+        }
+    );
 
     if config.benchmark_tuning {
         println!("\nRunning sieve tuning benchmark mode...");
@@ -145,7 +166,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             println!("Suggested full analysis command:");
             println!(
-                "  RAYON_NUM_THREADS={} cargo run --release -- --max-exponent {} --bins {} --output-dir '{}' --segment-size-kb {} --sieve-min-chunk-words {} --sieve-chunk-multiplier {} --gaps {}{}",
+                "  RAYON_NUM_THREADS={} cargo run --release -- --max-exponent {} --bins {} --output-dir '{}' --segment-size-kb {} --sieve-min-chunk-words {} --sieve-chunk-multiplier {} --batch-size {} --gaps {}{}{}{}",
                 best.rayon_threads,
                 config.max_exponent,
                 config.bins,
@@ -153,7 +174,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 best.segment_size_kb,
                 best.min_chunk_words,
                 best.chunk_multiplier,
+                config.batch_size,
                 gaps_csv,
+                if config.disable_precompute {
+                    " --disable-precompute"
+                } else {
+                    ""
+                },
+                if config.no_progress {
+                    " --no-progress"
+                } else {
+                    ""
+                },
                 if config.web_report { " --web-report" } else { "" }
             );
         }
@@ -167,10 +199,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut stats = Statistics::new(max_n, config.bins, &sorted_target_gaps);
 
-    let bar = ProgressBar::new(max_n);
-    bar.set_style(indicatif::ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>7}/{len:7} ({eta})")?
-        .progress_chars("#>-"));
+    let bar = if config.no_progress {
+        ProgressBar::hidden()
+    } else {
+        let pb = ProgressBar::new(max_n);
+        pb.set_style(indicatif::ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>7}/{len:7} ({eta})")?
+            .progress_chars("#>-"));
+        pb
+    };
 
     let mut p_prev = 2;
 
@@ -190,17 +227,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut gap_successes = vec![0u64; MAX_FAST_GAP];
 
     // --- Batching for Sieve Pre-computation ---
-    const BATCH_SIZE: usize = 262_144;
-    let mut batch = Vec::with_capacity(BATCH_SIZE);
+    let mut batch = Vec::with_capacity(config.batch_size);
 
     for p_current in prime_iterator {
         batch.push(p_current);
 
-        if batch.len() >= BATCH_SIZE {
+        if batch.len() >= config.batch_size {
             // Pre-compute Sieve for this batch
             let min_s = p_prev * 2; // Approx lower bound for S (p_prev + p_current - 1)
             let max_s = batch.last().unwrap() * 2 + 2000; // Upper bound with safety margin
-            primality_checker.ensure_range(min_s, max_s);
+            if !config.disable_precompute {
+                primality_checker.ensure_range(min_s, max_s);
+            }
 
             // Process Batch Sequentially
             for &p_curr in &batch {
@@ -243,8 +281,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 p_prev = p_curr;
             }
 
-            // Throttled UI
-            bar.inc(batch.len() as u64);
+            // Throttled UI: progress should track numeric range up to N.
+            if let Some(&last_prime_in_batch) = batch.last() {
+                bar.set_position(last_prime_in_batch);
+            }
             batch.clear();
         }
     }
@@ -253,7 +293,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !batch.is_empty() {
         let min_s = p_prev * 2;
         let max_s = batch.last().unwrap() * 2 + 2000;
-        primality_checker.ensure_range(min_s, max_s);
+        if !config.disable_precompute {
+            primality_checker.ensure_range(min_s, max_s);
+        }
 
         for &p_curr in &batch {
             stats.total_primes += 1;
@@ -292,7 +334,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             p_prev = p_curr;
         }
-        bar.inc(batch.len() as u64);
+        if let Some(&last_prime_in_batch) = batch.last() {
+            bar.set_position(last_prime_in_batch);
+        }
     }
 
     bar.finish_with_message("Analysis complete.");

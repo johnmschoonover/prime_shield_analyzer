@@ -55,4 +55,16 @@ pub struct Config {
     /// Number of warmup segments per benchmark configuration.
     #[arg(long, default_value_t = 2)]
     pub benchmark_warmup_segments: usize,
+
+    /// Disable batch sieve precomputation (ensure_range) for A/B performance testing.
+    #[arg(long)]
+    pub disable_precompute: bool,
+
+    /// Number of primes per processing batch. Set to 1 for near-streaming behavior.
+    #[arg(long, default_value_t = 262_144)]
+    pub batch_size: usize,
+
+    /// Disable progress bar rendering for cleaner performance measurements.
+    #[arg(long)]
+    pub no_progress: bool,
 }
