@@ -6,13 +6,19 @@ mod stats;
 
 use clap::Parser;
 use indicatif::ProgressBar;
-use sieve::{PrimalityChecker, PrimeIterator};
+use sieve::{
+    benchmark_sieve_configs, describe_chunk_plan, PrimalityChecker, PrimeIterator, SieveTuning,
+};
 use stats::Statistics;
 
 use crate::config::Config;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::parse();
+    let sieve_tuning = SieveTuning {
+        min_chunk_words: config.sieve_min_chunk_words,
+        chunk_multiplier: config.sieve_chunk_multiplier,
+    };
 
     // Validate gaps
     if config.gaps.is_empty() {
@@ -68,16 +74,96 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let max_n = 10u64.pow(config.max_exponent);
     let segment_size_bytes = config.segment_size_kb * 1024;
+    let chunk_plan = describe_chunk_plan(segment_size_bytes, sieve_tuning);
 
     println!("Max N (10^{}): {}", config.max_exponent, max_n);
     println!("Bins: {}", config.bins);
     println!("Output Dir: {}", config.output_dir);
     println!("Using Segment Size: {} KB", config.segment_size_kb);
+    println!(
+        "Rayon threads detected: {} | Segment words: {} | Chunk words: {} | Chunks/segment: {} | min_chunk_words={} | chunk_multiplier={}",
+        chunk_plan.rayon_threads,
+        chunk_plan.segment_words,
+        chunk_plan.chunk_size_words,
+        chunk_plan.approx_chunks_per_segment,
+        config.sieve_min_chunk_words,
+        config.sieve_chunk_multiplier
+    );
     println!("Tracking Gaps: {:?}", sorted_target_gaps);
 
-    let mut prime_iterator = PrimeIterator::new(max_n, segment_size_bytes);
+    if config.benchmark_tuning {
+        println!("\nRunning sieve tuning benchmark mode...");
+        let mut results = benchmark_sieve_configs(
+            max_n,
+            &config.benchmark_segment_kb_list,
+            &config.benchmark_min_chunk_words_list,
+            config.sieve_chunk_multiplier,
+            config.benchmark_warmup_segments,
+            config.benchmark_segments,
+        );
+        results.sort_by(|a, b| b.segments_per_second().total_cmp(&a.segments_per_second()));
+
+        println!(
+            "Measured {} configurations (warmup_segments={}, measured_segments={})",
+            results.len(),
+            config.benchmark_warmup_segments,
+            config.benchmark_segments
+        );
+        println!(
+            "{:<12} {:<14} {:<10} {:<14} {:<14} {:<16} {:<12}",
+            "segment_kb",
+            "min_chunk_words",
+            "multiplier",
+            "threads",
+            "chunk_words",
+            "chunks/segment",
+            "seg/s"
+        );
+        for result in &results {
+            println!(
+                "{:<12} {:<14} {:<10} {:<14} {:<14} {:<16} {:<12.2}",
+                result.segment_size_kb,
+                result.min_chunk_words,
+                result.chunk_multiplier,
+                result.rayon_threads,
+                result.chunk_size_words,
+                result.approx_chunks_per_segment,
+                result.segments_per_second(),
+            );
+        }
+
+        if let Some(best) = results.first() {
+            let gaps_csv = sorted_target_gaps
+                .iter()
+                .map(|g| g.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            println!("\nBest configuration detected:");
+            println!(
+                "  --segment-size-kb {} --sieve-min-chunk-words {} --sieve-chunk-multiplier {}",
+                best.segment_size_kb, best.min_chunk_words, best.chunk_multiplier
+            );
+            println!("Suggested full analysis command:");
+            println!(
+                "  RAYON_NUM_THREADS={} cargo run --release -- --max-exponent {} --bins {} --output-dir '{}' --segment-size-kb {} --sieve-min-chunk-words {} --sieve-chunk-multiplier {} --gaps {}{}",
+                best.rayon_threads,
+                config.max_exponent,
+                config.bins,
+                config.output_dir,
+                best.segment_size_kb,
+                best.min_chunk_words,
+                best.chunk_multiplier,
+                gaps_csv,
+                if config.web_report { " --web-report" } else { "" }
+            );
+        }
+        return Ok(());
+    }
+
+    let mut prime_iterator = PrimeIterator::new(max_n, segment_size_bytes, sieve_tuning);
     let analysis_limit = max_n * 2;
-    let mut primality_checker = PrimalityChecker::new(analysis_limit, segment_size_bytes);
+    let mut primality_checker =
+        PrimalityChecker::new(analysis_limit, segment_size_bytes, sieve_tuning);
 
     let mut stats = Statistics::new(max_n, config.bins, &sorted_target_gaps);
 
