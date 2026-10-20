@@ -32,11 +32,24 @@ impl BinStats {
     }
 }
 
+/// Running tally for a single gap size.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct GapTally {
+    /// Number of consecutive-prime pairs (p, p+g) seen with this gap.
+    pub count: u64,
+    /// Number of those pairs whose sum S = 2p + g - 1 was prime.
+    pub successes: u64,
+    /// Sum over pairs of 2 / ln(S): the expected number of successes if S
+    /// behaved like a random odd integer of its size. Dividing by `count`
+    /// gives the size-matched baseline rate for this gap.
+    pub baseline_sum: f64,
+}
+
 #[derive(Debug)]
 pub struct Statistics {
     pub total_primes: u64,
     pub total_s_primes: u64,
-    pub gap_spectrum: HashMap<u64, (u64, u64)>, // Map<GapSize, (Occurrences, Successes)>
+    pub gap_spectrum: HashMap<u64, GapTally>,
     pub bins: Vec<BinStats>,
     bin_size: u64,
     max_n_analysis_range: u64,

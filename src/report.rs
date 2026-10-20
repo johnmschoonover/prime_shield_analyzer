@@ -8,10 +8,14 @@ use std::path::Path;
 #[derive(Serialize, Deserialize, Debug)]
 struct GapSpectrumData {
     gap_size: u64,
+    count: u64,
     success_rate: f64,
+    baseline_rate: f64,
+    predicted_rate: f64,
     theoretical_boost: f64,
     shield_score: u32,
     shield_primes: String,
+    trap_primes: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -128,11 +132,12 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
         <h1>Prime Sum Analysis Report</h1>
         <div class="summary">
             <span><strong>Max N:</strong> <span id="displayMaxExponent">...</span> <span class="info-tooltip">ⓘ<span class="tooltip-text">The upper bound ($p_n$) for the prime analysis.</span></span></span> |
-            <span><strong>Analysis Bins:</strong> <span id="displayBins">...</span> <span class="info-tooltip">ⓘ<span class="tooltip-text">The number of windows the analysis range is divided into. Higher numbers provide more detail but can be noisier.</span></span></span>
+            <span><strong>Analysis Bins:</strong> <span id="displayBins">...</span> <span class="info-tooltip">ⓘ<span class="tooltip-text">The number of windows the analysis range is divided into. Higher numbers provide more detail but can be noisier.</span></span></span> |
+            <span><strong>Model R²:</strong> <span id="displayR2">...</span> <span class="info-tooltip">ⓘ<span class="tooltip-text">Coefficient of determination between predicted and observed success rates over gaps with at least 1,000 samples.</span></span></span>
         </div>
 
         <div class="chart-container">
-            <h2>Theory Verification <span class="info-tooltip">ⓘ<span class="tooltip-text">This chart plots the theoretical model (our 'boost' score) against the observed success rate to verify our hypothesis. The trendline is an ordinary least squares regression (best fit) line; points on this line behave exactly as predicted by the aggregate model.</span></span></h2>
+            <h2>Theory Verification <span class="info-tooltip">ⓘ<span class="tooltip-text">Predicted success rate (size-matched baseline 2/ln S times the product of local factors: shield q/(q-1), trap q(q-2)/(q-1)², neutral q(q-3)/((q-1)(q-2)) over odd primes q) against the observed rate. Points on the dashed y = x line behave exactly as the model predicts. Gaps with fewer than 1,000 samples are omitted.</span></span></h2>
             <canvas id="verificationChart"></canvas>
         </div>
 
@@ -174,29 +179,33 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
                 legendExplanations[`Gap ${gap} Rate`] = `The success rate for gaps of size ${gap} in this specific bin.`;
             });
 
-            // --- Verification Chart (New) ---
-            function calculateLinearRegression(data) {
-                const n = data.length;
-                if (n === 0) return { m: 0, b: 0 };
+            // --- Verification Chart ---
+            const verificationData = gapData
+                .filter(d => d.count >= 1000)
+                .map(d => ({
+                    x: d.predicted_rate,
+                    y: d.success_rate,
+                    gap: d.gap_size,
+                    count: d.count,
+                    boost: d.theoretical_boost,
+                    shields: d.shield_primes,
+                    traps: d.trap_primes
+                }));
 
-                let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-                data.forEach(p => { sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumXX += p.x * p.x; });
-
-                const m = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-                const b = (sumY - m * sumX) / n;
-                return { m, b };
+            function rSquared(points) {
+                const n = points.length;
+                if (n < 2) return NaN;
+                let mx = 0, my = 0;
+                points.forEach(p => { mx += p.x; my += p.y; });
+                mx /= n; my /= n;
+                let sxy = 0, sxx = 0, syy = 0;
+                points.forEach(p => { sxy += (p.x - mx) * (p.y - my); sxx += (p.x - mx) ** 2; syy += (p.y - my) ** 2; });
+                return (sxy * sxy) / (sxx * syy);
             }
+            document.getElementById('displayR2').textContent = rSquared(verificationData).toFixed(3);
 
-            const verificationData = gapData.map(d => ({
-                x: d.theoretical_boost,
-                y: d.success_rate,
-                gap: d.gap_size,
-                score: d.shield_score,
-                primes: d.shield_primes
-            }));
-
-            const regression = calculateLinearRegression(verificationData);
-            const trendlineData = verificationData.map(p => ({ x: p.x, y: regression.m * p.x + regression.b }));
+            const maxRate = Math.max(...verificationData.flatMap(p => [p.x, p.y])) * 1.05;
+            const identityLine = [{ x: 0, y: 0 }, { x: maxRate, y: maxRate }];
 
             new Chart(document.getElementById('verificationChart'), {
                 type: 'scatter',
@@ -205,29 +214,29 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
                         {
                             label: 'Gap 4 (Red)',
                             data: verificationData.filter(p => p.gap === 4),
-                            backgroundColor: 'rgba(255, 99, 132, 1)', // Red for Gap 4
+                            backgroundColor: 'rgba(255, 99, 132, 1)',
                             pointRadius: 7,
                         },
                         {
                             label: 'Gap 34 (Blue)',
                             data: verificationData.filter(p => p.gap === 34),
-                            backgroundColor: 'rgba(54, 162, 235, 1)', // Blue for Gap 34
+                            backgroundColor: 'rgba(54, 162, 235, 1)',
                             pointRadius: 7,
                         },
                         {
                             label: 'Other Gaps (Grey)',
                             data: verificationData.filter(p => p.gap !== 4 && p.gap !== 34),
-                            backgroundColor: 'rgba(0, 0, 0, 0.3)', // Default
+                            backgroundColor: 'rgba(0, 0, 0, 0.3)',
                             pointRadius: 4,
                         },
                         {
-                            label: 'Trendline',
-                            data: trendlineData,
+                            label: 'Perfect prediction (y = x)',
+                            data: identityLine,
                             type: 'line',
                             borderColor: 'rgba(75, 192, 192, 1)',
+                            borderDash: [6, 4],
                             borderWidth: 2,
                             pointRadius: 0,
-                            tension: 0.1
                         }
                     ]
                 },
@@ -237,14 +246,15 @@ pub fn generate_report(config: &Config, max_n: u64) -> Result<(), Box<dyn Error>
                             callbacks: {
                                 label: function(context) {
                                     const d = context.raw;
-                                    return `Gap: ${d.gap} | Boost: ${d.x.toFixed(2)} | Rate: ${d.y.toFixed(3)} | Score: ${d.score} | Primes: ${d.primes || 'none'}`;
+                                    if (d.gap === undefined) return '';
+                                    return `Gap ${d.gap} | predicted ${d.x.toFixed(4)} | observed ${d.y.toFixed(4)} | boost ${d.boost.toFixed(3)} | shields: ${d.shields || 'none'} | traps: ${d.traps || 'none'} | n=${d.count}`;
                                 }
                             }
                         }
                     },
                     scales: {
-                        x: { title: { display: true, text: 'Theoretical Boost' } },
-                        y: { title: { display: true, text: 'Observed Success Rate' } }
+                        x: { title: { display: true, text: 'Predicted Success Rate' }, min: 0 },
+                        y: { title: { display: true, text: 'Observed Success Rate' }, min: 0 }
                     }
                 }
             });

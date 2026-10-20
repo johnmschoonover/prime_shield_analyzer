@@ -87,8 +87,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let gap = p_current - p_prev;
         let s = p_current + p_prev - 1;
 
-        // Update gap spectrum (occurrences)
-        stats.gap_spectrum.entry(gap).or_insert((0, 0)).0 += 1;
+        // Update gap spectrum (occurrences + size-matched baseline)
+        {
+            let tally = stats.gap_spectrum.entry(gap).or_default();
+            tally.count += 1;
+            tally.baseline_sum += 2.0 / (s as f64).ln();
+        }
 
         // Update high-interest gap occurrences in the correct bin
         // The occurrence is tied to the location of p_current
@@ -106,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             stats.total_s_primes += 1;
 
             // Update gap spectrum (successes)
-            stats.gap_spectrum.entry(gap).or_insert((0, 0)).1 += 1;
+            stats.gap_spectrum.entry(gap).or_default().successes += 1;
 
             // Update bin stats for S
             if let Some(bin_index) = stats.get_bin_index(s) {
