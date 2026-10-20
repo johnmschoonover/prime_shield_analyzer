@@ -64,8 +64,9 @@ yarn-error.log*
 *.iws
 
 # Our application-specific output
-# Our application-specific output
 /results/
+/bench_*/
+/report_e*/
 
 # pre-commit cache and virtual environment
 .pre-commit/
